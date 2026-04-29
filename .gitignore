@@ -1,0 +1,29 @@
+# Python bytecode and local caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pycache_tmp*/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Project runtime workspace
+.replay_tool/
+
+# Test, coverage, and build outputs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local environment files
+.env
+.env.*
+

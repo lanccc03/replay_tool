@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+import io
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+import tests.bootstrap  # noqa: F401
+
+from replay_tool.cli import main
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class CliTests(unittest.TestCase):
+    def _run_cli(self, *args: str) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(list(args))
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_validate_and_run_output_stays_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "library"
+            scenario = ROOT / "examples" / "mock_canfd.json"
+
+            validate_code, validate_out, validate_err = self._run_cli(
+                "validate",
+                "--workspace",
+                str(workspace),
+                str(scenario),
+            )
+            run_code, run_out, run_err = self._run_cli(
+                "run",
+                "--workspace",
+                str(workspace),
+                str(scenario),
+            )
+
+        self.assertEqual(0, validate_code, validate_err)
+        self.assertIn("OK: mock-canfd-demo", validate_out)
+        self.assertEqual("", validate_err)
+        self.assertEqual(0, run_code, run_err)
+        self.assertIn("DONE: state=STOPPED sent=1 skipped=0 errors=0", run_out)
+        self.assertEqual("", run_err)
+        self.assertNotIn("\n1\n", run_out)
+        self.assertNotIn("\n2\n", run_out)
+
+    def test_import_list_inspect_and_run_imported_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "library"
+            code, out, err = self._run_cli(
+                "import",
+                "--workspace",
+                str(workspace),
+                str(ROOT / "examples" / "sample.asc"),
+            )
+            self.assertEqual(0, code, err)
+            self.assertEqual("", err)
+            trace_id = out.split("id=", 1)[1].split(" ", 1)[0]
+
+            list_code, list_out, list_err = self._run_cli("traces", "--workspace", str(workspace))
+            inspect_code, inspect_out, inspect_err = self._run_cli(
+                "inspect",
+                "--workspace",
+                str(workspace),
+                trace_id,
+            )
+
+            scenario_path = Path(tmp) / "imported_scenario.json"
+            scenario_payload = json.loads((ROOT / "examples" / "mock_canfd.json").read_text(encoding="utf-8"))
+            scenario_payload["traces"][0]["path"] = trace_id
+            scenario_path.write_text(json.dumps(scenario_payload), encoding="utf-8")
+            run_code, run_out, run_err = self._run_cli(
+                "run",
+                "--workspace",
+                str(workspace),
+                str(scenario_path),
+            )
+
+        self.assertEqual(0, list_code, list_err)
+        self.assertIn(trace_id, list_out)
+        self.assertEqual(0, inspect_code, inspect_err)
+        self.assertIn("SOURCES:", inspect_out)
+        self.assertIn("CH0 CANFD frames=1", inspect_out)
+        self.assertIn("0x18DAF110", inspect_out)
+        self.assertEqual(0, run_code, run_err)
+        self.assertIn("DONE: state=STOPPED sent=1 skipped=0 errors=0", run_out)
+
+
+if __name__ == "__main__":
+    unittest.main()
