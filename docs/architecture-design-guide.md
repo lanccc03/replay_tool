@@ -148,19 +148,18 @@ storage  -> ports + domain
 - 调用 BusDevice port 发送或读取帧。
 - 维护 Runtime snapshot 和结构化日志。
 
-当前实现是一个 `ReplayRuntime`。这是 MVP 形态，后续应拆成：
+当前实现的公开入口仍是 `ReplayRuntime`，但内部已经拆成多个可测试模块：
 
 ```text
 runtime/
   kernel.py          # 生命周期
   scheduler.py       # 时间轴游标、批处理窗口、过期事件策略
-  clock.py           # monotonic clock / fake clock
   dispatcher.py      # frame / diagnostic / link 分发
   device_session.py  # 设备 open/start/stop/reconnect/close
   telemetry.py       # 状态快照、结构化日志、错误事件
 ```
 
-拆分时要保证每个模块能单独测试。尤其是 pause/resume、loop、链路断开/恢复、过期帧策略，不能只能通过真硬件验证。
+继续扩展时要保证每个模块能单独测试。尤其是 pause/resume、loop、链路断开/恢复、过期帧策略，不能只能通过真硬件验证。
 
 ### 4.4 ports
 
@@ -222,18 +221,19 @@ runtime/
 - 标准化缓存。
 - trace 索引。
 
-当前已有 ASC reader 和第一版 trace library：
+当前已有 ASC reader 和 Trace Library v2 基线：
 
 ```text
 storage/
   asc.py          # ASC 直读
-  trace_store.py # SQLite 元数据 + JSON frame cache
+  binary_cache.py # 标准化二进制 frame cache
+  trace_store.py # SQLite 元数据 + 导入 / 查询 / 重建 / 删除
 ```
 
 导入 trace 时：
 
 - 复制原始文件。
-- 生成标准化 JSON frame cache。
+- 生成标准化 `.frames.bin` 二进制 frame cache。
 - 生成摘要给 CLI 和未来 UI 使用。
 
 当前回放时：
@@ -241,7 +241,8 @@ storage/
 - schema v1 仍可直接引用文件路径。
 - schema v1 也可把 `traces[].path` 写成已导入 trace id，由 app 层解析到 cache。
 - planner 仍会把当前场景相关帧编译进 `ReplayPlan`。
-- 大 trace 的时间窗口流式读取和索引仍是后续目标。
+- Trace Store 已提供 source filter 与时间窗口读取 API；planner 仍按场景编译整段 `ReplayPlan`。
+- 目前仅支持 ASC；BLF 解析仍未实现。
 
 ### 4.7 app
 
@@ -578,6 +579,7 @@ uv run python -m compileall src tests
 
 - 不再只直接读 ASC 文件。
 - 支持导入、列出、查看 trace。
+- 使用 ASC 二进制 frame cache 支撑后续大 trace 工作。
 
 建议命令：
 
@@ -585,28 +587,32 @@ uv run python -m compileall src tests
 replay-tool import examples/sample.asc
 replay-tool traces
 replay-tool inspect <trace-id>
+replay-tool rebuild-cache <trace-id>
+replay-tool delete-trace <trace-id>
 ```
 
 必须补：
 
 - SQLite 元数据。（已具备第一版）
-- 标准化 cache。（已具备 JSON frame cache；大 trace 二进制 cache 仍是后续优化）
+- 标准化 cache。（已具备 ASC `.frames.bin` 二进制 frame cache）
 - source summary。（已具备第一版）
 - message id summary。（已具备第一版）
 - trace id 引用。（已具备第一版）
+- source filter / 时间窗口读取。（已具备第一版）
+- cache rebuild / trace delete。（已具备第一版）
 
 ### Milestone 3：Runtime 拆分
 
 目标：
 
-- 从单个 `ReplayRuntime` 拆出 kernel、scheduler、dispatcher、device_session、telemetry。
+- 已从单个 `ReplayRuntime` 拆出 kernel、scheduler、dispatcher、device_session、telemetry；后续继续完善链路动作和诊断动作。
 - 为批处理、链路动作、诊断动作打基础。
 
 必须补：
 
-- 2ms frame batch 策略。
-- 按 adapter 分组发送。
-- partial send 统计。
+- 2ms frame batch 策略。（已具备第一版）
+- 按 adapter 分组发送。（已具备第一版）
+- partial send 统计。（已具备第一版）
 - link action 计划。
 - runtime snapshot 增强。
 
@@ -663,16 +669,16 @@ replay-tool inspect <trace-id>
 - Mock 回放。
 - 同星 adapter。
 - ASC reader。
-- Trace Library v1：导入、列出、查看 trace，SQLite 元数据，JSON frame cache，source/message summary，schema v1 trace id 引用。
+- Trace Library v2：导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，schema v1 trace id 引用。
 - fake TSMaster 单测。
 
 尚未具备：
 
-- 大 trace 二进制 cache/index/window reader。
 - schema v2 和 migration。
-- runtime 模块拆分。
+- trace index 与增量索引查询。
 - DBC / 信号覆盖。
 - CAN UDS / DoIP / DTC。
+- BLF 解析。
 - ZLG。
 - Qt UI。
 - Windows 同星真机验证结论。

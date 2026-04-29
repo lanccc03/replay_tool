@@ -36,6 +36,12 @@ def main(argv: list[str] | None = None) -> int:
     inspect_parser = subparsers.add_parser("inspect", parents=[workspace_parent], help="Inspect an imported trace.")
     inspect_parser.add_argument("trace_id")
 
+    rebuild_parser = subparsers.add_parser("rebuild-cache", parents=[workspace_parent], help="Rebuild an imported trace cache.")
+    rebuild_parser.add_argument("trace_id")
+
+    delete_parser = subparsers.add_parser("delete-trace", parents=[workspace_parent], help="Delete an imported trace.")
+    delete_parser.add_argument("trace_id")
+
     devices_parser = subparsers.add_parser("devices", parents=[workspace_parent], help="List device channels.")
     devices_parser.add_argument("--driver", default="tongxing")
     devices_parser.add_argument("--sdk-root", default="TSMaster/Windows")
@@ -108,6 +114,28 @@ def main(argv: list[str] | None = None) -> int:
             for message in inspection.messages:
                 ids = ",".join(f"0x{message_id:X}" for message_id in message.message_ids)
                 print(f"  CH{message.source_channel} {message.bus.value} frames={message.frame_count} ids={ids}")
+            return 0
+        if args.command == "rebuild-cache":
+            record = app.rebuild_trace_cache(args.trace_id)
+            print(
+                "REBUILT: id={id} name={name} frames={frames} cache={cache}".format(
+                    id=record.trace_id,
+                    name=record.name,
+                    frames=record.event_count,
+                    cache=record.cache_path,
+                )
+            )
+            return 0
+        if args.command == "delete-trace":
+            result = app.delete_trace(args.trace_id)
+            print(
+                "DELETED: id={id} name={name} library_file={library} cache_file={cache}".format(
+                    id=result.trace_id,
+                    name=result.name,
+                    library=result.deleted_library_file,
+                    cache=result.deleted_cache_file,
+                )
+            )
             return 0
         if args.command == "devices":
             config = DeviceConfig(

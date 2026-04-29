@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
 import sqlite3
-from typing import Iterator, Sequence
 import uuid
 
 from replay_tool.domain import BusType, Frame
-from replay_tool.ports import TraceInspection, TraceMessageSummary, TraceRecord, TraceSourceSummary
+from replay_tool.ports import DeleteTraceResult, TraceInspection, TraceMessageSummary, TraceRecord, TraceSourceSummary
 from replay_tool.storage.asc import AscTraceReader
+from replay_tool.storage.binary_cache import (
+    BINARY_CACHE_FORMAT,
+    BINARY_CACHE_SUFFIX,
+    iter_binary_frame_cache,
+    write_binary_frame_cache,
+)
 
 
-CACHE_SUFFIX = ".frames.json"
+JSON_CACHE_SUFFIX = ".frames.json"
 
 
 class ManagedTraceReader:
@@ -22,18 +28,69 @@ class ManagedTraceReader:
         self.asc_reader = AscTraceReader()
 
     def read(self, path: str) -> list[Frame]:
-        """Read frames from a raw trace or managed frame cache.
+        """Read frames from a raw ASC trace or managed binary frame cache.
 
         Args:
-            path: Path to an ASC trace or JSON frame cache.
+            path: Path to an ASC trace or binary frame cache.
 
         Returns:
             Parsed replay frames.
         """
+        return list(self.iter(path))
+
+    def iter(
+        self,
+        path: str,
+        *,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> Iterator[Frame]:
+        """Iterate frames from a raw ASC trace or managed binary frame cache.
+
+        Args:
+            path: Path to an ASC trace or binary frame cache.
+            source_filters: Optional `(source_channel, bus)` pairs to include.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Yields:
+            Parsed replay frames matching the requested filters.
+
+        Raises:
+            ValueError: If a legacy JSON cache or unsupported trace path is
+                requested.
+        """
         trace_path = Path(path)
-        if trace_path.suffix.lower() == ".json" and trace_path.name.endswith(CACHE_SUFFIX):
-            return read_frame_cache(trace_path)
-        return self.asc_reader.read(path)
+        if trace_path.name.endswith(BINARY_CACHE_SUFFIX):
+            yield from iter_binary_frame_cache(
+                trace_path,
+                source_filters=source_filters,
+                start_ns=start_ns,
+                end_ns=end_ns,
+            )
+            return
+        if trace_path.name.endswith(JSON_CACHE_SUFFIX) or trace_path.suffix.lower() == ".json":
+            raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
+        if trace_path.suffix.lower() != ".asc":
+            raise ValueError(f"Unsupported trace format: {trace_path.suffix}")
+        normalized_filters = (
+            {
+                (int(channel), bus if isinstance(bus, BusType) else BusType(bus))
+                for channel, bus in source_filters
+            }
+            if source_filters is not None
+            else None
+        )
+        frames = self.asc_reader.read(str(trace_path))
+        for frame in frames:
+            if normalized_filters is not None and (frame.channel, frame.bus) not in normalized_filters:
+                continue
+            if start_ns is not None and frame.ts_ns < int(start_ns):
+                continue
+            if end_ns is not None and frame.ts_ns >= int(end_ns):
+                continue
+            yield frame
 
 
 class SqliteTraceStore:
@@ -62,12 +119,14 @@ class SqliteTraceStore:
         source = Path(source_path)
         if not source.exists():
             raise FileNotFoundError(source)
+        if source.suffix.lower() != ".asc":
+            raise ValueError(f"Only ASC trace import is supported: {source.suffix}")
         trace_id = uuid.uuid4().hex
         library_path = self.trace_dir / f"{trace_id}{source.suffix.lower()}"
-        cache_path = self.cache_dir / f"{trace_id}{CACHE_SUFFIX}"
+        cache_path = self.cache_dir / f"{trace_id}{BINARY_CACHE_SUFFIX}"
         shutil.copy2(source, library_path)
         frames = self.trace_reader.asc_reader.read(str(library_path))
-        write_frame_cache(cache_path, frames)
+        write_binary_frame_cache(cache_path, frames)
         imported_at = datetime.now(timezone.utc).isoformat()
         record = TraceRecord(
             trace_id=trace_id,
@@ -80,6 +139,7 @@ class SqliteTraceStore:
             start_ns=frames[0].ts_ns if frames else 0,
             end_ns=frames[-1].ts_ns if frames else 0,
             metadata={
+                "cache_format": BINARY_CACHE_FORMAT,
                 "source_summaries": _source_summaries_json(frames),
                 "message_summaries": _message_summaries_json(frames),
             },
@@ -188,23 +248,133 @@ class SqliteTraceStore:
             ),
         )
 
-    def load_frames(self, trace_id: str) -> list[Frame]:
+    def load_frames(
+        self,
+        trace_id: str,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> list[Frame]:
         """Load normalized cached frames for an imported trace.
+
+        Args:
+            trace_id: Trace library identifier.
+            source_filters: Optional `(source_channel, bus)` pairs to include.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Returns:
+            Frames decoded from the managed binary cache.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+            FileNotFoundError: If the cache file is missing.
+            ValueError: If the cache payload is unsupported or invalid.
+        """
+        return list(self.iter_frames(trace_id, source_filters=source_filters, start_ns=start_ns, end_ns=end_ns))
+
+    def iter_frames(
+        self,
+        trace_id: str,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> Iterator[Frame]:
+        """Iterate normalized cached frames for an imported trace.
+
+        Args:
+            trace_id: Trace library identifier.
+            source_filters: Optional `(source_channel, bus)` pairs to include.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Returns:
+            Iterator over frames decoded from the managed binary cache.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+            FileNotFoundError: If the cache file is missing.
+            ValueError: If the cache payload is unsupported or invalid.
+        """
+        record = self.get_trace(trace_id)
+        if record is None:
+            raise KeyError(trace_id)
+        cache_path = Path(record.cache_path)
+        if cache_path.name.endswith(JSON_CACHE_SUFFIX):
+            raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
+        if not cache_path.exists():
+            raise FileNotFoundError(cache_path)
+        return self.trace_reader.iter(
+            str(cache_path),
+            source_filters=source_filters,
+            start_ns=start_ns,
+            end_ns=end_ns,
+        )
+
+    def rebuild_cache(self, trace_id: str) -> TraceRecord:
+        """Rebuild one binary cache from its copied ASC file.
 
         Args:
             trace_id: Trace library identifier.
 
         Returns:
-            Frames decoded from the managed cache.
+            Updated trace record.
 
         Raises:
             KeyError: If the trace ID is unknown.
-            ValueError: If the cache payload is invalid.
+            FileNotFoundError: If the copied ASC file is missing.
+            ValueError: If the copied file cannot be parsed as ASC.
         """
         record = self.get_trace(trace_id)
         if record is None:
             raise KeyError(trace_id)
-        return read_frame_cache(Path(record.cache_path))
+        library_path = Path(record.library_path)
+        if not library_path.exists():
+            raise FileNotFoundError(library_path)
+        frames = self.trace_reader.asc_reader.read(str(library_path))
+        cache_path = self.cache_dir / f"{trace_id}{BINARY_CACHE_SUFFIX}"
+        write_binary_frame_cache(cache_path, frames)
+        metadata = dict(record.metadata)
+        metadata["cache_format"] = BINARY_CACHE_FORMAT
+        metadata["source_summaries"] = _source_summaries_json(frames)
+        metadata["message_summaries"] = _message_summaries_json(frames)
+        self._update_trace_record(
+            trace_id,
+            cache_path=str(cache_path),
+            event_count=len(frames),
+            start_ns=frames[0].ts_ns if frames else 0,
+            end_ns=frames[-1].ts_ns if frames else 0,
+            metadata=metadata,
+        )
+        updated = self.get_trace(trace_id)
+        assert updated is not None
+        return updated
+
+    def delete_trace(self, trace_id: str) -> DeleteTraceResult:
+        """Delete one imported trace record and managed files.
+
+        Args:
+            trace_id: Trace library identifier.
+
+        Returns:
+            Deletion result indicating which files were removed.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+        """
+        record = self.get_trace(trace_id)
+        if record is None:
+            raise KeyError(trace_id)
+        deleted_library_file = self._unlink_if_exists(record.library_path)
+        deleted_cache_file = self._unlink_if_exists(record.cache_path)
+        with self._connect() as connection:
+            connection.execute("DELETE FROM trace_files WHERE trace_id = ?", (trace_id,))
+        return DeleteTraceResult(
+            trace_id=record.trace_id,
+            name=record.name,
+            deleted_library_file=deleted_library_file,
+            deleted_cache_file=deleted_cache_file,
+        )
 
     def _ensure_dirs(self) -> None:
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -259,70 +429,41 @@ class SqliteTraceStore:
             metadata=metadata,
         )
 
+    def _update_trace_record(
+        self,
+        trace_id: str,
+        *,
+        cache_path: str,
+        event_count: int,
+        start_ns: int,
+        end_ns: int,
+        metadata: dict[str, object],
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE trace_files
+                SET cache_path = ?, event_count = ?, start_ns = ?, end_ns = ?, metadata_json = ?
+                WHERE trace_id = ?
+                """,
+                (
+                    cache_path,
+                    int(event_count),
+                    int(start_ns),
+                    int(end_ns),
+                    json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                    trace_id,
+                ),
+            )
 
-def write_frame_cache(path: str | Path, frames: Sequence[Frame]) -> None:
-    """Write normalized frames to a JSON frame cache.
-
-    Args:
-        path: Cache file path to write.
-        frames: Frames to serialize.
-    """
-    cache_path = Path(path)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = [_frame_to_jsonable(frame) for frame in frames]
-    cache_path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-
-
-def read_frame_cache(path: str | Path) -> list[Frame]:
-    """Read normalized frames from a JSON frame cache.
-
-    Args:
-        path: Cache file path to read.
-
-    Returns:
-        Decoded replay frames.
-
-    Raises:
-        ValueError: If the cache root payload is not a JSON array.
-    """
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError(f"Invalid trace cache payload: {path}")
-    return [_frame_from_jsonable(item) for item in payload]
-
-
-def _frame_to_jsonable(frame: Frame) -> dict[str, object]:
-    return {
-        "ts_ns": frame.ts_ns,
-        "bus": frame.bus.value,
-        "channel": frame.channel,
-        "message_id": frame.message_id,
-        "payload": frame.payload.hex(),
-        "dlc": frame.dlc,
-        "extended": frame.extended,
-        "remote": frame.remote,
-        "brs": frame.brs,
-        "esi": frame.esi,
-        "direction": frame.direction,
-        "source_file": frame.source_file,
-    }
-
-
-def _frame_from_jsonable(payload: dict[str, object]) -> Frame:
-    return Frame(
-        ts_ns=int(payload["ts_ns"]),
-        bus=BusType(str(payload["bus"])),
-        channel=int(payload["channel"]),
-        message_id=int(payload["message_id"]),
-        payload=bytes.fromhex(str(payload.get("payload", ""))),
-        dlc=int(payload["dlc"]),
-        extended=bool(payload.get("extended", False)),
-        remote=bool(payload.get("remote", False)),
-        brs=bool(payload.get("brs", False)),
-        esi=bool(payload.get("esi", False)),
-        direction=str(payload.get("direction", "Rx")),
-        source_file=str(payload.get("source_file", "")),
-    )
+    @staticmethod
+    def _unlink_if_exists(raw_path: str) -> bool:
+        path = Path(raw_path)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
 
 
 def _source_summaries_json(frames: Sequence[Frame]) -> list[dict[str, object]]:

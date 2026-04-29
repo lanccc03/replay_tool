@@ -11,7 +11,11 @@
   - `docs/testing.md`
   - `src/replay_tool/domain/model.py`
   - `src/replay_tool/planning/plan.py`
-  - `src/replay_tool/runtime/engine.py`
+  - `src/replay_tool/runtime/kernel.py`
+  - `src/replay_tool/runtime/scheduler.py`
+  - `src/replay_tool/runtime/dispatcher.py`
+  - `src/replay_tool/runtime/device_session.py`
+  - `src/replay_tool/runtime/telemetry.py`
   - `src/replay_tool/app/service.py`
   - `src/replay_tool/cli.py`
 - 按任务补读：

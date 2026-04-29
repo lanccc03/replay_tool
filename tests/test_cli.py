@@ -61,6 +61,7 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(0, code, err)
             self.assertEqual("", err)
+            self.assertIn(".frames.bin", out)
             trace_id = out.split("id=", 1)[1].split(" ", 1)[0]
 
             list_code, list_out, list_err = self._run_cli("traces", "--workspace", str(workspace))
@@ -81,6 +82,19 @@ class CliTests(unittest.TestCase):
                 str(workspace),
                 str(scenario_path),
             )
+            rebuild_code, rebuild_out, rebuild_err = self._run_cli(
+                "rebuild-cache",
+                "--workspace",
+                str(workspace),
+                trace_id,
+            )
+            delete_code, delete_out, delete_err = self._run_cli(
+                "delete-trace",
+                "--workspace",
+                str(workspace),
+                trace_id,
+            )
+            empty_list_code, empty_list_out, empty_list_err = self._run_cli("traces", "--workspace", str(workspace))
 
         self.assertEqual(0, list_code, list_err)
         self.assertIn(trace_id, list_out)
@@ -90,6 +104,15 @@ class CliTests(unittest.TestCase):
         self.assertIn("0x18DAF110", inspect_out)
         self.assertEqual(0, run_code, run_err)
         self.assertIn("DONE: state=STOPPED sent=1 skipped=0 errors=0", run_out)
+        self.assertEqual(0, rebuild_code, rebuild_err)
+        self.assertIn("REBUILT:", rebuild_out)
+        self.assertIn(".frames.bin", rebuild_out)
+        self.assertEqual(0, delete_code, delete_err)
+        self.assertIn("DELETED:", delete_out)
+        self.assertIn("library_file=True", delete_out)
+        self.assertIn("cache_file=True", delete_out)
+        self.assertEqual(0, empty_list_code, empty_list_err)
+        self.assertEqual("No traces.\n", empty_list_out)
 
 
 if __name__ == "__main__":

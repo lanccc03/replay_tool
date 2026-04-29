@@ -9,7 +9,7 @@ The first version is a CLI-first MVP with a ports-and-adapters architecture:
 - `planning`: compiles a scenario into a replay plan.
 - `runtime`: executes the plan.
 - `adapters`: mock and Tongxing implementations.
-- `storage`: ASC trace parsing.
+- `storage`: ASC trace parsing and Trace Library binary cache storage.
 - `app`: CLI use cases.
 
 The architecture and design guide is maintained in
@@ -25,6 +25,7 @@ uv run replay-tool validate examples/mock_canfd.json
 uv run replay-tool run examples/mock_canfd.json
 uv run replay-tool import examples/sample.asc
 uv run replay-tool traces
+uv run replay-tool inspect <trace-id>
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -36,6 +37,7 @@ python -m replay_tool.cli validate examples/mock_canfd.json
 python -m replay_tool.cli run examples/mock_canfd.json
 python -m replay_tool.cli import examples/sample.asc
 python -m replay_tool.cli traces
+python -m replay_tool.cli inspect <trace-id>
 python -m unittest discover -s tests -v
 ```
 

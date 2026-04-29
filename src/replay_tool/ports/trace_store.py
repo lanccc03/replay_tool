@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Iterable, Iterator
 from typing import Protocol
 
 from replay_tool.domain import BusType, Frame
@@ -40,6 +41,14 @@ class TraceInspection:
     record: TraceRecord
     sources: tuple[TraceSourceSummary, ...]
     messages: tuple[TraceMessageSummary, ...]
+
+
+@dataclass(frozen=True)
+class DeleteTraceResult:
+    trace_id: str
+    name: str
+    deleted_library_file: bool
+    deleted_cache_file: bool
 
 
 class TraceStore(Protocol):
@@ -87,14 +96,75 @@ class TraceStore(Protocol):
         """
         ...
 
-    def load_frames(self, trace_id: str) -> list[Frame]:
+    def load_frames(
+        self,
+        trace_id: str,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> list[Frame]:
         """Load normalized frames for an imported trace.
+
+        Args:
+            trace_id: Trace library identifier.
+            source_filters: Optional `(source_channel, bus)` pairs to include.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Returns:
+            Cached frames matching the requested filters.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+        """
+        ...
+
+    def iter_frames(
+        self,
+        trace_id: str,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> Iterator[Frame]:
+        """Iterate normalized frames for an imported trace.
+
+        Args:
+            trace_id: Trace library identifier.
+            source_filters: Optional `(source_channel, bus)` pairs to include.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Yields:
+            Cached frames matching the requested filters.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+        """
+        ...
+
+    def rebuild_cache(self, trace_id: str) -> TraceRecord:
+        """Rebuild a trace cache from the copied library file.
 
         Args:
             trace_id: Trace library identifier.
 
         Returns:
-            Cached frames for the trace.
+            Updated trace record.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+            FileNotFoundError: If the copied library file is missing.
+        """
+        ...
+
+    def delete_trace(self, trace_id: str) -> DeleteTraceResult:
+        """Delete one imported trace record and its managed files.
+
+        Args:
+            trace_id: Trace library identifier.
+
+        Returns:
+            Deletion result showing which managed files were removed.
 
         Raises:
             KeyError: If the trace ID is unknown.

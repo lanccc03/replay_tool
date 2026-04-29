@@ -43,6 +43,9 @@ The visible result is that the existing single-channel scenario and a new four-c
 - Observation: The first four-channel hardware run hit a local `uv` cache permission error, not a replay code failure.
   Evidence: `uv run replay-tool run examples/tongxing_tc1014_four_channel_canfd.json` first returned `Failed to initialize cache ... 拒绝访问`; the same command succeeded when rerun with approved escalation.
 
+- Observation: The compatibility forwarding file `src/replay_tool/runtime/engine.py` was removed after the user decided the old import path was no longer needed.
+  Evidence: `src/replay_tool/runtime/__init__.py` now imports `ReplayRuntime` directly from `replay_tool.runtime.kernel`.
+
 ## Decision Log
 
 - Decision: Combine TC1014 hardware closure and runtime split in one ExecPlan.
@@ -65,9 +68,13 @@ The visible result is that the existing single-channel scenario and a new four-c
   Rationale: Those files were already modified by the user before implementation and appear to be active hardware material. The new four-channel smoke scenario provides the deterministic 4-frame acceptance case.
   Date/Author: 2026-04-29 / Codex.
 
+- Decision: Remove `src/replay_tool/runtime/engine.py` instead of keeping it as a compatibility forwarding module.
+  Rationale: The user explicitly said the old door is not needed. New code should import `ReplayRuntime` from `replay_tool.runtime` or `replay_tool.runtime.kernel`.
+  Date/Author: 2026-04-29 / Codex with user direction.
+
 ## Outcomes & Retrospective
 
-The implementation added a deterministic four-channel TC1014 smoke trace and scenario, expanded fake TSMaster coverage for four-channel mapping/send/read/close, and split the runtime into `kernel`, `scheduler`, `dispatcher`, `device_session`, and `telemetry` modules while keeping `ReplayRuntime` import-compatible.
+The implementation added a deterministic four-channel TC1014 smoke trace and scenario, expanded fake TSMaster coverage for four-channel mapping/send/read/close, and split the runtime into `kernel`, `scheduler`, `dispatcher`, `device_session`, and `telemetry` modules. `ReplayRuntime` remains available from `replay_tool.runtime`; the old `replay_tool.runtime.engine` forwarding module has been removed.
 
 Automated validation passed with 21 tests. TC1014 CLI hardware validation passed for device enumeration, the existing single-channel scenario, and the new four-channel scenario. External bus monitor confirmation remains unverified by Codex because the monitor output is outside the accessible workspace and terminal.
 
@@ -75,7 +82,7 @@ Automated validation passed with 21 tests. TC1014 CLI hardware validation passed
 
 `next_replay` is a new project under `C:\code\next_replay`. It must not import code from the old `C:\code\replay\src\replay_platform` package. Current core flow is: scenario JSON is parsed by `ReplayScenario`, compiled by `ReplayPlanner` into `ReplayPlan`, and executed by `ReplayRuntime`.
 
-The current runtime is concentrated in `src/replay_tool/runtime/engine.py`. The Tongxing adapter lives in `src/replay_tool/adapters/tongxing/device.py`. Hardware validation instructions live in `docs/tongxing-hardware-validation.md`. Automated tests use fake TSMaster API in `tests/test_tongxing_adapter.py`; those tests are required but do not prove real hardware behavior.
+Before this plan, the runtime was concentrated in `src/replay_tool/runtime/engine.py`. After this plan, `ReplayRuntime` lives in `src/replay_tool/runtime/kernel.py` and is exported from `src/replay_tool/runtime/__init__.py`. The Tongxing adapter lives in `src/replay_tool/adapters/tongxing/device.py`. Hardware validation instructions live in `docs/tongxing-hardware-validation.md`. Automated tests use fake TSMaster API in `tests/test_tongxing_adapter.py`; those tests are required but do not prove real hardware behavior.
 
 An adapter is a class that hides a hardware SDK behind the `BusDevice` protocol in `src/replay_tool/ports/device.py`. A replay plan is the immutable runtime input defined by `ReplayPlan` in `src/replay_tool/planning/plan.py`. A runtime snapshot is the immutable status object returned by `ReplayRuntime.snapshot()`.
 
@@ -85,7 +92,7 @@ First, establish the baseline. Run compile and unit tests, validate the mock sce
 
 Next, add a committed four-channel TC1014 example: a small ASC trace with four CANFD frames on source channels 0 through 3, and a matching scenario mapping logical channels 0 through 3 to physical channels 0 through 3. Use 500 kbit/s nominal and 2 Mbit/s data bitrate unless the existing TC1014 setup proves otherwise. Add fake SDK tests that start all four channels, verify channel count growth to four, verify mappings and CANFD bitrate calls for each physical channel, send one frame per channel, read FIFO frames, and close cleanly.
 
-Then split runtime internals without changing CLI behavior. Keep `ReplayRuntime` import-compatible in `src/replay_tool/runtime/engine.py`, but move implementation into focused modules: `kernel.py` for lifecycle, `scheduler.py` for cursor, loop, batch timing, and pause/resume time-base math; `dispatcher.py` for frame grouping and partial-send accounting; `device_session.py` for open, start, close, and route lookup; and `telemetry.py` for snapshot counters and errors. Add Google-style docstrings to new public classes and methods. Do not add diagnostics, DBC, ZLG, Qt, schema v2, or old-project imports in this ExecPlan.
+Then split runtime internals without changing CLI behavior. Export `ReplayRuntime` from `replay_tool.runtime`, with implementation in `kernel.py` for lifecycle, `scheduler.py` for cursor, loop, batch timing, and pause/resume time-base math; `dispatcher.py` for frame grouping and partial-send accounting; `device_session.py` for open, start, close, and route lookup; and `telemetry.py` for snapshot counters and errors. Add Google-style docstrings to new public classes and methods. Do not add diagnostics, DBC, ZLG, Qt, schema v2, or old-project imports in this ExecPlan.
 
 Runtime behavior must remain compatible, with two deliberate improvements: dispatch frames in 2 ms timestamp batches grouped by device, and count partial sends correctly as accepted frames plus skipped remainder. Clarify the `BusDevice.send()` contract as "number of frames accepted for transmission." Add optional `timeline_index` and `timeline_size` fields to `ReplaySnapshot` with defaults so existing callers keep working.
 
@@ -221,6 +228,7 @@ Keep the full hardware observations in `docs/tongxing-hardware-validation.md`.
 Public compatibility:
 
 - Keep `replay_tool.runtime.ReplayRuntime` and its public methods: `configure`, `start`, `pause`, `resume`, `stop`, `wait`, and `snapshot`.
+- Do not keep `replay_tool.runtime.engine`; it was removed by user direction after the split.
 - Keep CLI commands and current scenario schema v1 behavior.
 - Clarify `BusDevice.send(frames)` as returning the number of frames accepted.
 - Add only backward-compatible fields to `ReplaySnapshot`: `timeline_index: int = 0` and `timeline_size: int = 0`.
@@ -243,3 +251,5 @@ Assumptions:
 Revision note: Created initial living ExecPlan before implementation so future work can resume from this file alone.
 
 Revision note: Updated after implementation with runtime split, four-channel TC1014 assets, automated test results, TC1014 CLI hardware results, and the remaining external-monitor verification gap.
+
+Revision note: Updated after removing the old `runtime.engine` compatibility module by user request.

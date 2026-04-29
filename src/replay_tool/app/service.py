@@ -9,7 +9,7 @@ from replay_tool.adapters.tongxing import TongxingDevice
 from replay_tool.domain import DeviceConfig, ReplayScenario, TraceConfig
 from replay_tool.planning import ReplayPlan, ReplayPlanner
 from replay_tool.ports.registry import DeviceRegistry
-from replay_tool.ports.trace_store import TraceInspection, TraceRecord, TraceStore
+from replay_tool.ports.trace_store import DeleteTraceResult, TraceInspection, TraceRecord, TraceStore
 from replay_tool.runtime import ReplayRuntime
 from replay_tool.storage import ManagedTraceReader, SqliteTraceStore
 
@@ -133,6 +133,35 @@ class ReplayApplication:
             KeyError: If the trace ID is unknown.
         """
         return self.trace_store.inspect_trace(trace_id)
+
+    def rebuild_trace_cache(self, trace_id: str) -> TraceRecord:
+        """Rebuild a trace library cache from its copied source file.
+
+        Args:
+            trace_id: Trace library identifier.
+
+        Returns:
+            Updated trace record.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+            FileNotFoundError: If the copied source trace is missing.
+        """
+        return self.trace_store.rebuild_cache(trace_id)
+
+    def delete_trace(self, trace_id: str) -> DeleteTraceResult:
+        """Delete an imported trace and its managed files.
+
+        Args:
+            trace_id: Trace library identifier.
+
+        Returns:
+            Result describing which managed files were deleted.
+
+        Raises:
+            KeyError: If the trace ID is unknown.
+        """
+        return self.trace_store.delete_trace(trace_id)
 
     def create_device(self, config: DeviceConfig):
         """Create a device adapter through the application registry.

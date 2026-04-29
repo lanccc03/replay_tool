@@ -1,3 +1,3 @@
-from replay_tool.runtime.engine import ReplayRuntime
+from replay_tool.runtime.kernel import ReplayRuntime
 
 __all__ = ["ReplayRuntime"]
