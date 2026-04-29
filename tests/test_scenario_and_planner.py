@@ -59,6 +59,16 @@ class ScenarioAndPlannerTests(unittest.TestCase):
         self.assertEqual("mock0", plan.channels[0].device_id)
         self.assertEqual(0, plan.channels[0].physical_channel)
 
+    def test_four_channel_tongxing_example_maps_all_sources(self) -> None:
+        app = ReplayApplication()
+        plan = app.compile_plan(ROOT / "examples" / "tongxing_tc1014_four_channel_canfd.json")
+
+        self.assertEqual("tongxing-tc1014-four-channel-canfd-smoke", plan.name)
+        self.assertEqual([0, 1, 2, 3], [frame.channel for frame in plan.frames])
+        self.assertEqual([0x18DAF110, 0x18DAF111, 0x18DAF112, 0x18DAF113], [frame.message_id for frame in plan.frames])
+        self.assertEqual([0, 1, 2, 3], [channel.physical_channel for channel in plan.channels])
+        self.assertTrue(all(frame.brs for frame in plan.frames))
+
 
 if __name__ == "__main__":
     unittest.main()

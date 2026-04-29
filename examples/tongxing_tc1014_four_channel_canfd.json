@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "name": "tongxing-tc1014-four-channel-canfd-smoke",
+  "traces": [
+    {
+      "id": "trace1",
+      "path": "tongxing_tc1014_four_channel_canfd.asc"
+    }
+  ],
+  "devices": [
+    {
+      "id": "tx0",
+      "driver": "tongxing",
+      "application": "ReplayTool",
+      "sdk_root": "TSMaster/Windows",
+      "device_type": "TC1014",
+      "device_index": 0,
+      "project_path": ""
+    }
+  ],
+  "channels": [
+    {
+      "logical_channel": 0,
+      "trace_id": "trace1",
+      "source_channel": 0,
+      "device_id": "tx0",
+      "physical_channel": 0,
+      "bus": "CANFD",
+      "nominal_baud": 500000,
+      "data_baud": 2000000,
+      "resistance_enabled": true,
+      "listen_only": false,
+      "tx_echo": false
+    },
+    {
+      "logical_channel": 1,
+      "trace_id": "trace1",
+      "source_channel": 1,
+      "device_id": "tx0",
+      "physical_channel": 1,
+      "bus": "CANFD",
+      "nominal_baud": 500000,
+      "data_baud": 2000000,
+      "resistance_enabled": true,
+      "listen_only": false,
+      "tx_echo": false
+    },
+    {
+      "logical_channel": 2,
+      "trace_id": "trace1",
+      "source_channel": 2,
+      "device_id": "tx0",
+      "physical_channel": 2,
+      "bus": "CANFD",
+      "nominal_baud": 500000,
+      "data_baud": 2000000,
+      "resistance_enabled": true,
+      "listen_only": false,
+      "tx_echo": false
+    },
+    {
+      "logical_channel": 3,
+      "trace_id": "trace1",
+      "source_channel": 3,
+      "device_id": "tx0",
+      "physical_channel": 3,
+      "bus": "CANFD",
+      "nominal_baud": 500000,
+      "data_baud": 2000000,
+      "resistance_enabled": true,
+      "listen_only": false,
+      "tx_echo": false
+    }
+  ],
+  "replay": {
+    "loop": false
+  }
+}

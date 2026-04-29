@@ -284,6 +284,8 @@ class ReplaySnapshot:
     state: ReplayState = ReplayState.STOPPED
     current_ts_ns: int = 0
     total_ts_ns: int = 0
+    timeline_index: int = 0
+    timeline_size: int = 0
     sent_frames: int = 0
     skipped_frames: int = 0
     errors: tuple[str, ...] = ()

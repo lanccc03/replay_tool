@@ -23,6 +23,31 @@ class ManualClock:
         self.now_ns += max(int(seconds * 1_000_000_000), 1)
 
 
+class RecordingDevice(MockDevice):
+    def __init__(self, config: DeviceConfig, *, accepted_per_send: int | None = None) -> None:
+        super().__init__(config)
+        self.accepted_per_send = accepted_per_send
+        self.send_batches: list[tuple[Frame, ...]] = []
+
+    def send(self, frames) -> int:
+        """Record one batch and report the configured accepted count.
+
+        Args:
+            frames: Frames sent by the runtime dispatcher.
+
+        Returns:
+            Either the full batch length or the configured partial count.
+        """
+        self.send_batches.append(tuple(frames))
+        if self.accepted_per_send is None:
+            return super().send(frames)
+        for frame in frames:
+            if int(frame.channel) not in self.started_channels:
+                raise RuntimeError(f"Recording channel {frame.channel} is not started.")
+        self.sent_frames.extend(frames)
+        return min(self.accepted_per_send, len(frames))
+
+
 class RuntimeTests(unittest.TestCase):
     def _make_plan(self, *, loop: bool = False, ts_ns: int = 0) -> tuple[ReplayPlan, list[MockDevice]]:
         devices: list[MockDevice] = []
@@ -104,6 +129,89 @@ class RuntimeTests(unittest.TestCase):
         runtime.stop()
 
         self.assertGreaterEqual(runtime.snapshot().completed_loops, 1)
+
+    def test_runtime_batches_frames_in_two_millisecond_window_and_groups_by_device(self) -> None:
+        devices: dict[str, RecordingDevice] = {}
+        registry = DeviceRegistry()
+        registry.register("recording", lambda item: devices.setdefault(item.id, RecordingDevice(item)))
+        channel_config = ChannelConfig(bus=BusType.CANFD)
+        plan = ReplayPlan(
+            name="batch-demo",
+            frames=tuple(
+                Frame(
+                    ts_ns=index * 500_000,
+                    bus=BusType.CANFD,
+                    channel=index,
+                    message_id=0x100 + index,
+                    payload=bytes([index]),
+                    dlc=1,
+                )
+                for index in range(4)
+            ),
+            devices=(
+                DeviceConfig(id="dev0", driver="recording"),
+                DeviceConfig(id="dev1", driver="recording"),
+            ),
+            channels=(
+                PlannedChannel(0, "dev0", 0, type("Binding", (), {"config": channel_config})()),
+                PlannedChannel(1, "dev0", 1, type("Binding", (), {"config": channel_config})()),
+                PlannedChannel(2, "dev1", 0, type("Binding", (), {"config": channel_config})()),
+                PlannedChannel(3, "dev1", 1, type("Binding", (), {"config": channel_config})()),
+            ),
+        )
+        clock = ManualClock()
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+
+        runtime.configure(plan)
+        runtime.start()
+        self.assertTrue(runtime.wait(timeout=2.0))
+
+        snapshot = runtime.snapshot()
+        self.assertEqual(4, snapshot.sent_frames)
+        self.assertEqual(0, snapshot.skipped_frames)
+        self.assertEqual(4, snapshot.timeline_index)
+        self.assertEqual(4, snapshot.timeline_size)
+        self.assertEqual(1, len(devices["dev0"].send_batches))
+        self.assertEqual(1, len(devices["dev1"].send_batches))
+        self.assertEqual([0, 1], [frame.channel for frame in devices["dev0"].send_batches[0]])
+        self.assertEqual([0, 1], [frame.channel for frame in devices["dev1"].send_batches[0]])
+
+    def test_runtime_counts_partial_batch_send_as_skipped_remainder(self) -> None:
+        devices: list[RecordingDevice] = []
+        registry = DeviceRegistry()
+        registry.register("recording", lambda item: devices.append(RecordingDevice(item, accepted_per_send=1)) or devices[-1])
+        channel_config = ChannelConfig(bus=BusType.CANFD)
+        plan = ReplayPlan(
+            name="partial-demo",
+            frames=tuple(
+                Frame(
+                    ts_ns=index * 100_000,
+                    bus=BusType.CANFD,
+                    channel=index,
+                    message_id=0x200 + index,
+                    payload=bytes([index]),
+                    dlc=1,
+                )
+                for index in range(3)
+            ),
+            devices=(DeviceConfig(id="dev0", driver="recording"),),
+            channels=tuple(
+                PlannedChannel(index, "dev0", index, type("Binding", (), {"config": channel_config})())
+                for index in range(3)
+            ),
+        )
+        clock = ManualClock()
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+
+        runtime.configure(plan)
+        runtime.start()
+        self.assertTrue(runtime.wait(timeout=2.0))
+
+        snapshot = runtime.snapshot()
+        self.assertEqual(1, snapshot.sent_frames)
+        self.assertEqual(2, snapshot.skipped_frames)
+        self.assertEqual(1, len(devices[0].send_batches))
+        self.assertEqual(3, len(devices[0].send_batches[0]))
 
 
 if __name__ == "__main__":

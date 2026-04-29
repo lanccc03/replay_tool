@@ -56,7 +56,9 @@ class BusDevice(Protocol):
             frames: Frames whose channel field is a physical channel index.
 
         Returns:
-            Number of frames accepted for transmission.
+            Number of frames accepted for transmission. The return value may be
+            lower than the input length when an adapter accepts only part of a
+            batch.
         """
         ...
 

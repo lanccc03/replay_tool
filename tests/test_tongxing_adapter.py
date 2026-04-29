@@ -407,6 +407,43 @@ class TongxingAdapterTests(unittest.TestCase):
         self.assertEqual([2], [item["channel"] for item in api.canfd_configs])
         self.assertEqual(4000.0, api.canfd_configs[0]["data_kbps"])
 
+    def test_four_channel_canfd_mapping_send_read_and_close(self) -> None:
+        device, api = self._make_device()
+
+        for channel in range(4):
+            device.start_channel(channel, ChannelConfig(bus=BusType.CANFD))
+        sent = device.send(
+            [
+                Frame(
+                    ts_ns=channel * 500_000,
+                    bus=BusType.CANFD,
+                    channel=channel,
+                    message_id=0x18DAF110 + channel,
+                    payload=bytes(range(channel * 0x20, channel * 0x20 + 24)),
+                    dlc=0xC,
+                    extended=True,
+                    brs=True,
+                )
+                for channel in range(4)
+            ]
+        )
+        for channel in range(4):
+            api.queue_canfd(channel, bytes([channel] * 24), time_us=100 + channel)
+        received = device.read(limit=10)
+        device.close()
+
+        self.assertEqual(4, api.channel_count)
+        self.assertEqual([0, 1, 2, 3], [item["physical_channel"] for item in api.mappings])
+        self.assertEqual([0, 1, 2, 3], [item["channel"] for item in api.canfd_configs])
+        self.assertEqual([500.0, 500.0, 500.0, 500.0], [item["nominal_kbps"] for item in api.canfd_configs])
+        self.assertEqual([2000.0, 2000.0, 2000.0, 2000.0], [item["data_kbps"] for item in api.canfd_configs])
+        self.assertEqual(4, sent)
+        self.assertEqual([0, 1, 2, 3], [item["channel"] for item in api.sent_canfd])
+        self.assertEqual([0x18DAF110, 0x18DAF111, 0x18DAF112, 0x18DAF113], [item["identifier"] for item in api.sent_canfd])
+        self.assertEqual([0, 1, 2, 3], [item.channel for item in received])
+        self.assertFalse(api.connected)
+        self.assertTrue(api.finalized)
+
     def test_read_sorts_fifo_frames_across_started_channels(self) -> None:
         device, api = self._make_device()
         device.start_channel(0, ChannelConfig(bus=BusType.CANFD))
