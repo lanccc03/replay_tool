@@ -82,6 +82,28 @@ class TraceStore(Protocol):
         """
         ...
 
+    def get_trace_by_original_path(self, original_path: str) -> TraceRecord | None:
+        """Look up a trace by its original path.
+
+        Args:
+            original_path: Original source path recorded during import.
+
+        Returns:
+            The matching record, or None when it is unknown.
+        """
+        ...
+
+    def get_trace_by_cache_path(self, cache_path: str) -> TraceRecord | None:
+        """Look up a trace by its binary cache path.
+
+        Args:
+            cache_path: Managed binary cache path.
+
+        Returns:
+            The matching record, or None when it is unknown.
+        """
+        ...
+
     def inspect_trace(self, trace_id: str) -> TraceInspection:
         """Return summary information for an imported trace.
 

@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from replay_tool.domain import Frame
 from replay_tool.planning import ReplayPlan
+from replay_tool.runtime.timeline import MergedTimelineCursor
 
 
 Clock = Callable[[], int]
@@ -23,18 +24,24 @@ class TimelineScheduler:
         self.clock = clock
         self.batch_window_ns = int(batch_window_ns)
         self._plan: ReplayPlan | None = None
+        self._cursor: MergedTimelineCursor | None = None
+        self._pending_batch: tuple[Frame, ...] = ()
         self._base_perf_ns = 0
         self._pause_started_ns = 0
         self._timeline_index = 0
         self._completed_loops = 0
 
-    def configure(self, plan: ReplayPlan) -> None:
+    def configure(self, plan: ReplayPlan, cursor: MergedTimelineCursor) -> None:
         """Load a replay plan and reset cursor state.
 
         Args:
             plan: Executable replay plan.
+            cursor: Timeline cursor opened for the plan.
         """
+        self.close()
         self._plan = plan
+        self._cursor = cursor
+        self._pending_batch = ()
         self._base_perf_ns = 0
         self._pause_started_ns = 0
         self._timeline_index = 0
@@ -70,8 +77,8 @@ class TimelineScheduler:
         Returns:
             Whether the cursor is at or beyond the end of the plan.
         """
-        plan = self._require_plan()
-        return self._timeline_index >= len(plan.frames)
+        cursor = self._require_cursor()
+        return not self._pending_batch and cursor.at_end()
 
     def current_batch(self) -> tuple[Frame, ...]:
         """Return the frame batch at the current cursor.
@@ -80,18 +87,9 @@ class TimelineScheduler:
             Frames in a contiguous 2 ms scheduling window, or an empty tuple at
             the end of the timeline.
         """
-        plan = self._require_plan()
-        if self._timeline_index >= len(plan.frames):
-            return ()
-        first = plan.frames[self._timeline_index]
-        window_end_ns = first.ts_ns + self.batch_window_ns
-        end_index = self._timeline_index + 1
-        while end_index < len(plan.frames):
-            frame = plan.frames[end_index]
-            if frame.ts_ns >= window_end_ns:
-                break
-            end_index += 1
-        return tuple(plan.frames[self._timeline_index:end_index])
+        if not self._pending_batch:
+            self._pending_batch = self._require_cursor().read_batch(self.batch_window_ns)
+        return self._pending_batch
 
     def target_perf_ns(self, batch: tuple[Frame, ...]) -> int:
         """Return the absolute clock target for a frame batch.
@@ -116,6 +114,7 @@ class TimelineScheduler:
             The new cursor index.
         """
         self._timeline_index += max(int(count), 0)
+        self._pending_batch = ()
         return self._timeline_index
 
     def restart_loop(self) -> int:
@@ -126,10 +125,22 @@ class TimelineScheduler:
         """
         self._completed_loops += 1
         self._timeline_index = 0
+        self._pending_batch = ()
+        self._require_cursor().rewind()
         self._base_perf_ns = self.clock()
         return self._completed_loops
+
+    def close(self) -> None:
+        """Close the configured timeline cursor."""
+        if self._cursor is not None:
+            self._cursor.close()
 
     def _require_plan(self) -> ReplayPlan:
         if self._plan is None:
             raise RuntimeError("TimelineScheduler is not configured.")
         return self._plan
+
+    def _require_cursor(self) -> MergedTimelineCursor:
+        if self._cursor is None:
+            raise RuntimeError("TimelineScheduler cursor is not configured.")
+        return self._cursor

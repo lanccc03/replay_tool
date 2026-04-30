@@ -11,7 +11,7 @@ from replay_tool.planning import ReplayPlan, ReplayPlanner
 from replay_tool.ports.registry import DeviceRegistry
 from replay_tool.ports.trace_store import DeleteTraceResult, TraceInspection, TraceRecord, TraceStore
 from replay_tool.runtime import ReplayRuntime
-from replay_tool.storage import ManagedTraceReader, SqliteTraceStore
+from replay_tool.storage import BINARY_CACHE_SUFFIX, ManagedTraceReader, SqliteTraceStore
 
 
 def build_default_registry() -> DeviceRegistry:
@@ -40,7 +40,7 @@ class ReplayApplication:
         self.workspace = Path(workspace) if workspace is not None else Path(".replay_tool")
         self.trace_reader = ManagedTraceReader()
         self.trace_store = trace_store or SqliteTraceStore(self.workspace, self.trace_reader)
-        self.planner = ReplayPlanner(self.trace_reader)
+        self.planner = ReplayPlanner()
 
     def load_scenario(self, path: str | Path) -> ReplayScenario:
         """Load a scenario JSON file.
@@ -71,8 +71,8 @@ class ReplayApplication:
         """
         path = Path(scenario_path)
         scenario = self.load_scenario(path)
-        scenario = self._resolve_imported_traces(scenario, base_dir=path.parent)
-        return self.planner.compile(scenario, base_dir=path.parent)
+        scenario, trace_records = self._prepare_trace_sources(scenario, base_dir=path.parent)
+        return self.planner.compile(scenario, base_dir=path.parent, trace_records=trace_records)
 
     def validate(self, scenario_path: str | Path) -> ReplayPlan:
         """Validate that a scenario can be compiled.
@@ -95,7 +95,12 @@ class ReplayApplication:
             The runtime after execution has stopped.
         """
         plan = self.compile_plan(scenario_path)
-        runtime = ReplayRuntime(self.registry, logger=self.logger)
+        runtime = ReplayRuntime(
+            self.registry,
+            logger=self.logger,
+            trace_reader=self.trace_reader,
+            trace_store=self.trace_store,
+        )
         runtime.configure(plan)
         runtime.start()
         runtime.wait()
@@ -177,29 +182,64 @@ class ReplayApplication:
         """
         return self.registry.create(config)
 
-    def _resolve_imported_traces(self, scenario: ReplayScenario, *, base_dir: Path) -> ReplayScenario:
-        resolved_traces = tuple(self._resolve_trace_config(trace, base_dir=base_dir) for trace in scenario.traces)
+    def _prepare_trace_sources(
+        self,
+        scenario: ReplayScenario,
+        *,
+        base_dir: Path,
+    ) -> tuple[ReplayScenario, dict[str, TraceRecord]]:
+        resolved: list[TraceConfig] = []
+        records: dict[str, TraceRecord] = {}
+        for trace in scenario.traces:
+            resolved_trace, record = self._resolve_trace_config(trace, base_dir=base_dir)
+            resolved.append(resolved_trace)
+            records[trace.id] = record
+        resolved_traces = tuple(resolved)
         if resolved_traces == scenario.traces:
-            return scenario
-        return ReplayScenario(
-            schema_version=scenario.schema_version,
-            name=scenario.name,
-            traces=resolved_traces,
-            devices=scenario.devices,
-            sources=scenario.sources,
-            targets=scenario.targets,
-            routes=scenario.routes,
-            timeline=scenario.timeline,
+            return scenario, records
+        return (
+            ReplayScenario(
+                schema_version=scenario.schema_version,
+                name=scenario.name,
+                traces=resolved_traces,
+                devices=scenario.devices,
+                sources=scenario.sources,
+                targets=scenario.targets,
+                routes=scenario.routes,
+                timeline=scenario.timeline,
+            ),
+            records,
         )
 
-    def _resolve_trace_config(self, trace: TraceConfig, *, base_dir: Path) -> TraceConfig:
+    def _resolve_trace_config(self, trace: TraceConfig, *, base_dir: Path) -> tuple[TraceConfig, TraceRecord]:
         trace_path = Path(trace.path)
         candidate = trace_path if trace_path.is_absolute() else base_dir / trace_path
         if candidate.exists():
-            return trace
+            if candidate.name.endswith(BINARY_CACHE_SUFFIX):
+                record = self.trace_store.get_trace_by_cache_path(str(candidate))
+                if record is None:
+                    raise ValueError(f"Binary cache path is not managed by the trace library: {candidate}")
+                record = self._ensure_trace_cache(record)
+                return TraceConfig(id=trace.id, path=str(Path(record.cache_path).resolve())), record
+            if candidate.suffix.lower() != ".asc":
+                raise ValueError(f"Unsupported trace format: {candidate.suffix}")
+            original_path = str(candidate.resolve())
+            record = self.trace_store.get_trace_by_original_path(original_path)
+            if record is None:
+                record = self.trace_store.import_trace(original_path)
+            else:
+                record = self._ensure_trace_cache(record)
+            return TraceConfig(id=trace.id, path=str(Path(record.cache_path).resolve())), record
         record = self.trace_store.get_trace(trace.path)
         if record is None and trace.id != trace.path:
             record = self.trace_store.get_trace(trace.id)
         if record is None:
-            return trace
-        return TraceConfig(id=trace.id, path=record.cache_path)
+            raise FileNotFoundError(candidate)
+        record = self._ensure_trace_cache(record)
+        return TraceConfig(id=trace.id, path=str(Path(record.cache_path).resolve())), record
+
+    def _ensure_trace_cache(self, record: TraceRecord) -> TraceRecord:
+        cache_path = Path(record.cache_path)
+        if cache_path.exists():
+            return record
+        return self.trace_store.rebuild_cache(record.trace_id)

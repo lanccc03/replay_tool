@@ -8,10 +8,13 @@ from typing import Optional
 from replay_tool.domain import ReplaySnapshot, ReplayState
 from replay_tool.planning import ReplayPlan
 from replay_tool.ports.registry import DeviceRegistry
+from replay_tool.ports.trace import TraceReader
+from replay_tool.ports.trace_store import TraceStore
 from replay_tool.runtime.device_session import ReplayDeviceSession
 from replay_tool.runtime.dispatcher import FrameDispatcher
 from replay_tool.runtime.scheduler import Clock, TimelineScheduler
 from replay_tool.runtime.telemetry import RuntimeTelemetry
+from replay_tool.runtime.timeline import MergedTimelineCursor, PlannedSourceReader
 
 
 Sleeper = Callable[[float], None]
@@ -32,11 +35,15 @@ class ReplayRuntime:
         clock: Clock = time.perf_counter_ns,
         sleeper: Sleeper = time.sleep,
         logger: Callable[[str], None] | None = None,
+        trace_reader: TraceReader | None = None,
+        trace_store: TraceStore | None = None,
     ) -> None:
         self.registry = registry
         self.clock = clock
         self.sleeper = sleeper
         self.logger = logger or (lambda _message: None)
+        self.trace_reader = trace_reader
+        self.trace_store = trace_store
         self._plan: Optional[ReplayPlan] = None
         self._thread: Optional[threading.Thread] = None
         self._condition = threading.Condition()
@@ -54,12 +61,17 @@ class ReplayRuntime:
             plan: Executable replay plan produced by the planner.
 
         Raises:
-            RuntimeError: If the runtime is not stopped.
+            RuntimeError: If the runtime is not stopped, or if planned frame
+                sources cannot be opened by a trace reader or trace store.
         """
         if self._state != ReplayState.STOPPED:
             raise RuntimeError("Runtime must be stopped before configure().")
         self._plan = plan
-        self._scheduler.configure(plan)
+        cursor = MergedTimelineCursor(
+            plan.frame_sources,
+            PlannedSourceReader(self.trace_reader, self.trace_store),
+        )
+        self._scheduler.configure(plan, cursor)
         self._session.configure(plan)
         self._telemetry.configure(plan)
 
@@ -155,7 +167,7 @@ class ReplayRuntime:
                     if self._stop_requested:
                         return
                 if self._scheduler.at_end():
-                    if not self._plan.loop or not self._plan.frames:
+                    if not self._plan.loop or self._plan.timeline_size == 0:
                         self._finish()
                         return
                     completed_loops = self._scheduler.restart_loop()
@@ -200,3 +212,4 @@ class ReplayRuntime:
     def _close_devices(self) -> None:
         for error in self._session.close():
             self._telemetry.record_error(error)
+        self._scheduler.close()

@@ -37,7 +37,7 @@ class RuntimeTelemetry:
             self._snapshot = ReplaySnapshot(
                 total_ts_ns=plan.total_ts_ns,
                 timeline_index=0,
-                timeline_size=len(plan.frames),
+                timeline_size=plan.timeline_size,
             )
 
     def snapshot(self) -> ReplaySnapshot:

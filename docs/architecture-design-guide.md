@@ -243,9 +243,12 @@ storage/
 
 - schema v2 可直接引用文件路径。
 - schema v2 也可把 `traces[].path` 写成已导入 trace id，由 app 层解析到 cache。
-- planner 仍会把当前场景相关帧编译进 `ReplayPlan`。
-- Trace Store 已提供 source filter 与时间窗口读取 API；planner 仍按场景编译整段 `ReplayPlan`。
+- raw ASC 路径会先导入或复用 workspace 中的 `.frames.bin` cache。
+- planner 只把 trace/source/route 编译成 planned frame source，不再把帧列表塞进 `ReplayPlan`。
+- runtime 通过 cache-backed cursor 按 2 ms 窗口流式拉取下一批帧。
+- Trace Store 已提供 source filter、时间窗口读取和轻量 block index；缺失 index 时可从 cache 重建。
 - 目前仅支持 ASC；BLF 解析仍未实现。
+- 第一版流式导入要求时间戳单调递增；乱序 ASC 的外部归并排序仍未实现。
 
 ### 4.7 app
 
@@ -313,13 +316,14 @@ replay-tool run scenario.json --driver mock
 scenario JSON
     -> ReplayScenario.from_dict()
         -> ReplayPlanner.compile()
-            -> trace reader loads ASC or managed cache frames
-            -> source channel maps to logical channel
+            -> app resolves raw ASC / imported trace id to managed cache
+            -> planner emits planned frame sources
             -> ReplayPlan
                 -> ReplayRuntime.configure()
+                    -> timeline cursor opens managed cache streams
                     -> DeviceRegistry creates adapter
                     -> adapter.open/start_channel()
-                    -> runtime dispatches Frame
+                    -> runtime dispatches each 2 ms frame batch
                     -> adapter.send()
 ```
 
@@ -696,13 +700,14 @@ replay-tool delete-trace <trace-id>
 - Mock 回放。
 - 同星 adapter。
 - ASC reader。
-- Trace Library v2：导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，schema v2 trace id 引用。
+- Trace Library v2：流式导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，轻量 block index，schema v2 trace id 引用。
+- cache-backed 流式回放：`ReplayPlan` 保存 planned frame source，runtime 通过 cursor 按 2 ms batch 读取。
 - fake TSMaster 单测。
 
 尚未具备：
 
 - 历史 schema migration（本轮明确不支持 v1 运行兼容）。
-- trace index 与增量索引查询。
+- 乱序 ASC 的外部排序。
 - DBC / 信号覆盖。
 - CAN UDS / DoIP / DTC。
 - BLF 解析。

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 import time
 import unittest
 
@@ -7,7 +8,7 @@ import tests.bootstrap  # noqa: F401
 
 from replay_tool.adapters.mock import MockDevice
 from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, Frame, ReplayState
-from replay_tool.planning import PlannedChannel, ReplayPlan
+from replay_tool.planning import PlannedChannel, PlannedFrameSource, ReplayPlan
 from replay_tool.ports import DeviceRegistry
 from replay_tool.runtime import ReplayRuntime
 
@@ -48,8 +49,58 @@ class RecordingDevice(MockDevice):
         return min(self.accepted_per_send, len(frames))
 
 
+class InMemoryTraceReader:
+    def __init__(self, frames_by_path: dict[str, tuple[Frame, ...]]) -> None:
+        self.frames_by_path = frames_by_path
+
+    def read(self, path: str) -> list[Frame]:
+        """Read all frames for compatibility with the TraceReader protocol.
+
+        Args:
+            path: In-memory trace key.
+
+        Returns:
+            Frames matching the key.
+        """
+        return list(self.iter(path))
+
+    def iter(
+        self,
+        path: str,
+        *,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        start_ns: int | None = None,
+        end_ns: int | None = None,
+    ) -> Iterator[Frame]:
+        """Iterate in-memory frames with trace reader filters.
+
+        Args:
+            path: In-memory trace key.
+            source_filters: Optional source channel and bus filters.
+            start_ns: Optional inclusive lower timestamp bound.
+            end_ns: Optional exclusive upper timestamp bound.
+
+        Yields:
+            Matching frames.
+        """
+        filters = set(source_filters or ())
+        for frame in self.frames_by_path[path]:
+            if filters and (frame.channel, frame.bus) not in filters:
+                continue
+            if start_ns is not None and frame.ts_ns < start_ns:
+                continue
+            if end_ns is not None and frame.ts_ns >= end_ns:
+                continue
+            yield frame
+
+
 class RuntimeTests(unittest.TestCase):
-    def _make_plan(self, *, loop: bool = False, ts_ns: int = 0) -> tuple[ReplayPlan, list[MockDevice]]:
+    def _make_plan(
+        self,
+        *,
+        loop: bool = False,
+        ts_ns: int = 0,
+    ) -> tuple[ReplayPlan, list[MockDevice], DeviceRegistry, InMemoryTraceReader]:
         devices: list[MockDevice] = []
         config = DeviceConfig(id="mock0", driver="mock")
         channel_config = ChannelConfig(bus=BusType.CANFD)
@@ -63,7 +114,19 @@ class RuntimeTests(unittest.TestCase):
         )
         plan = ReplayPlan(
             name="runtime-demo",
-            frames=(frame,),
+            frame_sources=(
+                PlannedFrameSource(
+                    trace_id="trace0",
+                    source_id="source0",
+                    path="trace0",
+                    source_channel=0,
+                    bus=BusType.CANFD,
+                    logical_channel=0,
+                    frame_count=1,
+                    start_ns=ts_ns,
+                    end_ns=ts_ns,
+                ),
+            ),
             devices=(config,),
             channels=(
                 PlannedChannel(
@@ -74,15 +137,17 @@ class RuntimeTests(unittest.TestCase):
                 ),
             ),
             loop=loop,
+            timeline_size=1,
+            total_ts_ns=ts_ns,
         )
         registry = DeviceRegistry()
         registry.register("mock", lambda item: devices.append(MockDevice(item)) or devices[-1])
-        return plan, devices, registry
+        return plan, devices, registry, InMemoryTraceReader({"trace0": (frame,)})
 
     def test_runtime_sends_frames_and_closes_device(self) -> None:
-        plan, devices, registry = self._make_plan()
+        plan, devices, registry, trace_reader = self._make_plan()
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_reader=trace_reader)
 
         runtime.configure(plan)
         runtime.start()
@@ -95,9 +160,14 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(1, devices[0].sent_frames[0].channel)
 
     def test_pause_resume_rebinds_time_base(self) -> None:
-        plan, _devices, registry = self._make_plan(ts_ns=1_000_000_000)
+        plan, _devices, registry, trace_reader = self._make_plan(ts_ns=1_000_000_000)
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=lambda seconds: time.sleep(0.001))
+        runtime = ReplayRuntime(
+            registry,
+            clock=clock,
+            sleeper=lambda seconds: time.sleep(0.001),
+            trace_reader=trace_reader,
+        )
 
         runtime.configure(plan)
         runtime.start()
@@ -111,9 +181,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(1, runtime.snapshot().sent_frames)
 
     def test_loop_restarts_until_stopped(self) -> None:
-        plan, _devices, registry = self._make_plan(loop=True)
+        plan, _devices, registry, trace_reader = self._make_plan(loop=True)
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_reader=trace_reader)
 
         runtime.configure(plan)
         runtime.start()
@@ -129,16 +199,30 @@ class RuntimeTests(unittest.TestCase):
         registry = DeviceRegistry()
         registry.register("recording", lambda item: devices.setdefault(item.id, RecordingDevice(item)))
         channel_config = ChannelConfig(bus=BusType.CANFD)
+        frames = tuple(
+            Frame(
+                ts_ns=index * 500_000,
+                bus=BusType.CANFD,
+                channel=index,
+                message_id=0x100 + index,
+                payload=bytes([index]),
+                dlc=1,
+            )
+            for index in range(4)
+        )
         plan = ReplayPlan(
             name="batch-demo",
-            frames=tuple(
-                Frame(
-                    ts_ns=index * 500_000,
+            frame_sources=tuple(
+                PlannedFrameSource(
+                    trace_id="trace0",
+                    source_id=f"source{index}",
+                    path="trace0",
+                    source_channel=index,
                     bus=BusType.CANFD,
-                    channel=index,
-                    message_id=0x100 + index,
-                    payload=bytes([index]),
-                    dlc=1,
+                    logical_channel=index,
+                    frame_count=1,
+                    start_ns=frames[index].ts_ns,
+                    end_ns=frames[index].ts_ns,
                 )
                 for index in range(4)
             ),
@@ -152,9 +236,16 @@ class RuntimeTests(unittest.TestCase):
                 PlannedChannel(2, "dev1", 0, channel_config),
                 PlannedChannel(3, "dev1", 1, channel_config),
             ),
+            timeline_size=4,
+            total_ts_ns=frames[-1].ts_ns,
         )
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+        runtime = ReplayRuntime(
+            registry,
+            clock=clock,
+            sleeper=clock.advance_sleep,
+            trace_reader=InMemoryTraceReader({"trace0": frames}),
+        )
 
         runtime.configure(plan)
         runtime.start()
@@ -175,16 +266,30 @@ class RuntimeTests(unittest.TestCase):
         registry = DeviceRegistry()
         registry.register("recording", lambda item: devices.append(RecordingDevice(item, accepted_per_send=1)) or devices[-1])
         channel_config = ChannelConfig(bus=BusType.CANFD)
+        frames = tuple(
+            Frame(
+                ts_ns=index * 100_000,
+                bus=BusType.CANFD,
+                channel=index,
+                message_id=0x200 + index,
+                payload=bytes([index]),
+                dlc=1,
+            )
+            for index in range(3)
+        )
         plan = ReplayPlan(
             name="partial-demo",
-            frames=tuple(
-                Frame(
-                    ts_ns=index * 100_000,
+            frame_sources=tuple(
+                PlannedFrameSource(
+                    trace_id="trace0",
+                    source_id=f"source{index}",
+                    path="trace0",
+                    source_channel=index,
                     bus=BusType.CANFD,
-                    channel=index,
-                    message_id=0x200 + index,
-                    payload=bytes([index]),
-                    dlc=1,
+                    logical_channel=index,
+                    frame_count=1,
+                    start_ns=frames[index].ts_ns,
+                    end_ns=frames[index].ts_ns,
                 )
                 for index in range(3)
             ),
@@ -193,9 +298,16 @@ class RuntimeTests(unittest.TestCase):
                 PlannedChannel(index, "dev0", index, channel_config)
                 for index in range(3)
             ),
+            timeline_size=3,
+            total_ts_ns=frames[-1].ts_ns,
         )
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep)
+        runtime = ReplayRuntime(
+            registry,
+            clock=clock,
+            sleeper=clock.advance_sleep,
+            trace_reader=InMemoryTraceReader({"trace0": frames}),
+        )
 
         runtime.configure(plan)
         runtime.start()

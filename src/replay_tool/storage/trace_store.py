@@ -15,8 +15,11 @@ from replay_tool.storage.asc import AscTraceReader
 from replay_tool.storage.binary_cache import (
     BINARY_CACHE_FORMAT,
     BINARY_CACHE_SUFFIX,
+    BinaryFrameCacheWriter,
+    BinaryFrameIndexEntry,
+    build_binary_frame_cache_index,
     iter_binary_frame_cache,
-    write_binary_frame_cache,
+    iter_binary_frame_cache_blocks,
 )
 
 
@@ -82,8 +85,7 @@ class ManagedTraceReader:
             if source_filters is not None
             else None
         )
-        frames = self.asc_reader.read(str(trace_path))
-        for frame in frames:
+        for frame in self.asc_reader.iter(str(trace_path)):
             if normalized_filters is not None and (frame.channel, frame.bus) not in normalized_filters:
                 continue
             if start_ns is not None and frame.ts_ns < int(start_ns):
@@ -125,23 +127,26 @@ class SqliteTraceStore:
         library_path = self.trace_dir / f"{trace_id}{source.suffix.lower()}"
         cache_path = self.cache_dir / f"{trace_id}{BINARY_CACHE_SUFFIX}"
         shutil.copy2(source, library_path)
-        frames = self.trace_reader.asc_reader.read(str(library_path))
-        write_binary_frame_cache(cache_path, frames)
+        try:
+            summary, index_entries = self._write_cache_from_asc(library_path, cache_path)
+        except Exception:
+            self._unlink_if_exists(str(library_path))
+            raise
         imported_at = datetime.now(timezone.utc).isoformat()
         record = TraceRecord(
             trace_id=trace_id,
             name=source.name,
-            original_path=str(source),
+            original_path=str(source.resolve()),
             library_path=str(library_path),
             cache_path=str(cache_path),
             imported_at=imported_at,
-            event_count=len(frames),
-            start_ns=frames[0].ts_ns if frames else 0,
-            end_ns=frames[-1].ts_ns if frames else 0,
+            event_count=summary.event_count,
+            start_ns=summary.start_ns,
+            end_ns=summary.end_ns,
             metadata={
                 "cache_format": BINARY_CACHE_FORMAT,
-                "source_summaries": _source_summaries_json(frames),
-                "message_summaries": _message_summaries_json(frames),
+                "source_summaries": summary.source_summaries_json(),
+                "message_summaries": summary.message_summaries_json(),
             },
         )
         with self._connect() as connection:
@@ -165,6 +170,7 @@ class SqliteTraceStore:
                     json.dumps(record.metadata, ensure_ascii=False, sort_keys=True),
                 ),
             )
+            self._replace_frame_index(connection, trace_id, index_entries)
         return record
 
     def list_traces(self) -> list[TraceRecord]:
@@ -202,6 +208,55 @@ class SqliteTraceStore:
                 WHERE trace_id = ?
                 """,
                 (trace_id,),
+            ).fetchone()
+        return self._record_from_row(row) if row is not None else None
+
+    def get_trace_by_original_path(self, original_path: str) -> TraceRecord | None:
+        """Look up an imported trace by its original absolute source path.
+
+        Args:
+            original_path: Original source path used during import.
+
+        Returns:
+            The trace record, or None if no import matches the path.
+        """
+        normalized_path = str(Path(original_path).resolve())
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT trace_id, name, original_path, library_path, cache_path, imported_at,
+                       event_count, start_ns, end_ns, metadata_json
+                FROM trace_files
+                WHERE original_path = ?
+                ORDER BY imported_at DESC, trace_id DESC
+                LIMIT 1
+                """,
+                (normalized_path,),
+            ).fetchone()
+        return self._record_from_row(row) if row is not None else None
+
+    def get_trace_by_cache_path(self, cache_path: str) -> TraceRecord | None:
+        """Look up an imported trace by its managed cache path.
+
+        Args:
+            cache_path: Binary frame cache path.
+
+        Returns:
+            The trace record, or None if no import uses the cache path.
+        """
+        raw_path = Path(cache_path)
+        candidates = (str(raw_path), str(raw_path.resolve()))
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT trace_id, name, original_path, library_path, cache_path, imported_at,
+                       event_count, start_ns, end_ns, metadata_json
+                FROM trace_files
+                WHERE cache_path IN (?, ?)
+                ORDER BY imported_at DESC, trace_id DESC
+                LIMIT 1
+                """,
+                candidates,
             ).fetchone()
         return self._record_from_row(row) if row is not None else None
 
@@ -304,6 +359,16 @@ class SqliteTraceStore:
             raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
         if not cache_path.exists():
             raise FileNotFoundError(cache_path)
+        index_entries = self._ensure_frame_index(record)
+        if index_entries:
+            selected_blocks = _select_index_blocks(index_entries, source_filters, start_ns, end_ns)
+            return iter_binary_frame_cache_blocks(
+                cache_path,
+                selected_blocks,
+                source_filters=source_filters,
+                start_ns=start_ns,
+                end_ns=end_ns,
+            )
         return self.trace_reader.iter(
             str(cache_path),
             source_filters=source_filters,
@@ -331,21 +396,23 @@ class SqliteTraceStore:
         library_path = Path(record.library_path)
         if not library_path.exists():
             raise FileNotFoundError(library_path)
-        frames = self.trace_reader.asc_reader.read(str(library_path))
         cache_path = self.cache_dir / f"{trace_id}{BINARY_CACHE_SUFFIX}"
-        write_binary_frame_cache(cache_path, frames)
+        summary, index_entries = self._write_cache_from_asc(library_path, cache_path)
         metadata = dict(record.metadata)
         metadata["cache_format"] = BINARY_CACHE_FORMAT
-        metadata["source_summaries"] = _source_summaries_json(frames)
-        metadata["message_summaries"] = _message_summaries_json(frames)
-        self._update_trace_record(
-            trace_id,
-            cache_path=str(cache_path),
-            event_count=len(frames),
-            start_ns=frames[0].ts_ns if frames else 0,
-            end_ns=frames[-1].ts_ns if frames else 0,
-            metadata=metadata,
-        )
+        metadata["source_summaries"] = summary.source_summaries_json()
+        metadata["message_summaries"] = summary.message_summaries_json()
+        with self._connect() as connection:
+            self._update_trace_record(
+                connection,
+                trace_id,
+                cache_path=str(cache_path),
+                event_count=summary.event_count,
+                start_ns=summary.start_ns,
+                end_ns=summary.end_ns,
+                metadata=metadata,
+            )
+            self._replace_frame_index(connection, trace_id, index_entries)
         updated = self.get_trace(trace_id)
         assert updated is not None
         return updated
@@ -368,12 +435,83 @@ class SqliteTraceStore:
         deleted_library_file = self._unlink_if_exists(record.library_path)
         deleted_cache_file = self._unlink_if_exists(record.cache_path)
         with self._connect() as connection:
+            connection.execute("DELETE FROM trace_frame_index WHERE trace_id = ?", (trace_id,))
             connection.execute("DELETE FROM trace_files WHERE trace_id = ?", (trace_id,))
         return DeleteTraceResult(
             trace_id=record.trace_id,
             name=record.name,
             deleted_library_file=deleted_library_file,
             deleted_cache_file=deleted_cache_file,
+        )
+
+    def _write_cache_from_asc(
+        self,
+        library_path: Path,
+        cache_path: Path,
+    ) -> tuple["_TraceSummaryBuilder", list[BinaryFrameIndexEntry]]:
+        summary = _TraceSummaryBuilder()
+        with BinaryFrameCacheWriter(cache_path) as writer:
+            for frame in self.trace_reader.asc_reader.iter(str(library_path)):
+                writer.write(frame)
+                summary.add(frame)
+            if summary.event_count == 0:
+                raise ValueError(f"No ASC frames found in {library_path}.")
+        return summary, list(writer.index_entries)
+
+    def _ensure_frame_index(self, record: TraceRecord) -> list[BinaryFrameIndexEntry]:
+        entries = self._load_frame_index(record.trace_id)
+        if entries or record.event_count == 0:
+            return entries
+        rebuilt = build_binary_frame_cache_index(record.cache_path)
+        with self._connect() as connection:
+            self._replace_frame_index(connection, record.trace_id, rebuilt)
+        return rebuilt
+
+    def _load_frame_index(self, trace_id: str) -> list[BinaryFrameIndexEntry]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT block_number, file_offset, start_ns, end_ns, frame_count, sources_json
+                FROM trace_frame_index
+                WHERE trace_id = ?
+                ORDER BY block_number
+                """,
+                (trace_id,),
+            ).fetchall()
+        return [_index_entry_from_row(row) for row in rows]
+
+    def _replace_frame_index(
+        self,
+        connection: sqlite3.Connection,
+        trace_id: str,
+        entries: Sequence[BinaryFrameIndexEntry],
+    ) -> None:
+        connection.execute("DELETE FROM trace_frame_index WHERE trace_id = ?", (trace_id,))
+        connection.executemany(
+            """
+            INSERT INTO trace_frame_index (
+                trace_id, block_number, file_offset, start_ns, end_ns, frame_count, sources_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    trace_id,
+                    int(entry.block_number),
+                    int(entry.file_offset),
+                    int(entry.start_ns),
+                    int(entry.end_ns),
+                    int(entry.frame_count),
+                    json.dumps(
+                        [
+                            {"source_channel": channel, "bus": bus.value}
+                            for channel, bus in entry.sources
+                        ],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                )
+                for entry in entries
+            ],
         )
 
     def _ensure_dirs(self) -> None:
@@ -410,6 +548,27 @@ class SqliteTraceStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trace_frame_index (
+                    trace_id TEXT NOT NULL,
+                    block_number INTEGER NOT NULL,
+                    file_offset INTEGER NOT NULL,
+                    start_ns INTEGER NOT NULL,
+                    end_ns INTEGER NOT NULL,
+                    frame_count INTEGER NOT NULL,
+                    sources_json TEXT NOT NULL,
+                    PRIMARY KEY (trace_id, block_number),
+                    FOREIGN KEY (trace_id) REFERENCES trace_files(trace_id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS trace_frame_index_time_idx
+                ON trace_frame_index(trace_id, start_ns, end_ns)
+                """
+            )
 
     def _record_from_row(self, row) -> TraceRecord:
         metadata_raw = row[9] if row[9] else "{}"
@@ -431,6 +590,7 @@ class SqliteTraceStore:
 
     def _update_trace_record(
         self,
+        connection: sqlite3.Connection,
         trace_id: str,
         *,
         cache_path: str,
@@ -439,22 +599,21 @@ class SqliteTraceStore:
         end_ns: int,
         metadata: dict[str, object],
     ) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                """
-                UPDATE trace_files
-                SET cache_path = ?, event_count = ?, start_ns = ?, end_ns = ?, metadata_json = ?
-                WHERE trace_id = ?
-                """,
-                (
-                    cache_path,
-                    int(event_count),
-                    int(start_ns),
-                    int(end_ns),
-                    json.dumps(metadata, ensure_ascii=False, sort_keys=True),
-                    trace_id,
-                ),
-            )
+        connection.execute(
+            """
+            UPDATE trace_files
+            SET cache_path = ?, event_count = ?, start_ns = ?, end_ns = ?, metadata_json = ?
+            WHERE trace_id = ?
+            """,
+            (
+                cache_path,
+                int(event_count),
+                int(start_ns),
+                int(end_ns),
+                json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                trace_id,
+            ),
+        )
 
     @staticmethod
     def _unlink_if_exists(raw_path: str) -> bool:
@@ -464,6 +623,122 @@ class SqliteTraceStore:
         except FileNotFoundError:
             return False
         return True
+
+
+class _TraceSummaryBuilder:
+    def __init__(self) -> None:
+        self.event_count = 0
+        self.start_ns = 0
+        self.end_ns = 0
+        self._source_counts: dict[tuple[int, BusType], int] = {}
+        self._source_start_ns: dict[tuple[int, BusType], int] = {}
+        self._source_end_ns: dict[tuple[int, BusType], int] = {}
+        self._message_ids: dict[tuple[int, BusType], set[int]] = {}
+
+    def add(self, frame: Frame) -> None:
+        """Accumulate one streamed frame.
+
+        Args:
+            frame: Frame passing through import or rebuild.
+        """
+        if self.event_count == 0:
+            self.start_ns = frame.ts_ns
+        self.event_count += 1
+        self.end_ns = frame.ts_ns
+        key = (frame.channel, frame.bus)
+        self._source_counts[key] = self._source_counts.get(key, 0) + 1
+        self._source_start_ns.setdefault(key, frame.ts_ns)
+        self._source_end_ns[key] = frame.ts_ns
+        self._message_ids.setdefault(key, set()).add(frame.message_id)
+
+    def source_summaries_json(self) -> list[dict[str, object]]:
+        """Return source summaries for trace metadata.
+
+        Returns:
+            JSON-serializable source-channel summary items.
+        """
+        return [
+            {
+                "source_channel": channel,
+                "bus": bus.value,
+                "frame_count": count,
+                "start_ns": self._source_start_ns[(channel, bus)],
+                "end_ns": self._source_end_ns[(channel, bus)],
+            }
+            for (channel, bus), count in sorted(
+                self._source_counts.items(),
+                key=lambda item: (item[0][0], item[0][1].value),
+            )
+        ]
+
+    def message_summaries_json(self) -> list[dict[str, object]]:
+        """Return message summaries for trace metadata.
+
+        Returns:
+            JSON-serializable message summary items.
+        """
+        result: list[dict[str, object]] = []
+        for channel, bus in sorted(self._source_counts, key=lambda item: (item[0], item[1].value)):
+            result.append(
+                {
+                    "source_channel": channel,
+                    "bus": bus.value,
+                    "frame_count": self._source_counts[(channel, bus)],
+                    "message_ids": sorted(self._message_ids[(channel, bus)]),
+                }
+            )
+        return result
+
+
+def _index_entry_from_row(row) -> BinaryFrameIndexEntry:
+    sources_raw = json.loads(row[5] or "[]")
+    sources: list[tuple[int, BusType]] = []
+    if isinstance(sources_raw, list):
+        for item in sources_raw:
+            if not isinstance(item, dict):
+                continue
+            sources.append((int(item["source_channel"]), BusType(item["bus"])))
+    return BinaryFrameIndexEntry(
+        block_number=int(row[0]),
+        file_offset=int(row[1]),
+        start_ns=int(row[2]),
+        end_ns=int(row[3]),
+        frame_count=int(row[4]),
+        sources=tuple(sources),
+    )
+
+
+def _select_index_blocks(
+    entries: Sequence[BinaryFrameIndexEntry],
+    source_filters: Iterable[tuple[int, BusType]] | None,
+    start_ns: int | None,
+    end_ns: int | None,
+) -> list[BinaryFrameIndexEntry]:
+    normalized_filters = _normalize_source_filters(source_filters)
+    start_value = int(start_ns) if start_ns is not None else None
+    end_value = int(end_ns) if end_ns is not None else None
+    selected: list[BinaryFrameIndexEntry] = []
+    for entry in entries:
+        if start_value is not None and entry.end_ns < start_value:
+            continue
+        if end_value is not None and entry.start_ns >= end_value:
+            continue
+        if normalized_filters is not None and not any(source in normalized_filters for source in entry.sources):
+            continue
+        selected.append(entry)
+    return selected
+
+
+def _normalize_source_filters(
+    source_filters: Iterable[tuple[int, BusType]] | None,
+) -> set[tuple[int, BusType]] | None:
+    if source_filters is None:
+        return None
+    normalized = {
+        (int(channel), bus if isinstance(bus, BusType) else BusType(bus))
+        for channel, bus in source_filters
+    }
+    return normalized or None
 
 
 def _source_summaries_json(frames: Sequence[Frame]) -> list[dict[str, object]]:

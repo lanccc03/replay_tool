@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "validate":
             plan = app.validate(args.scenario)
-            print(f"OK: {plan.name} frames={len(plan.frames)} devices={len(plan.devices)} channels={len(plan.channels)}")
+            print(f"OK: {plan.name} frames={plan.timeline_size} devices={len(plan.devices)} channels={len(plan.channels)}")
             return 0
         if args.command == "run":
             runtime = app.run(args.scenario)

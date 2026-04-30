@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -21,26 +22,42 @@ class AscTraceReader:
 
         Raises:
             OSError: If the ASC file cannot be opened.
-            ValueError: If no supported frames are found.
+            ValueError: If no supported frames are found or timestamps are not
+                ordered.
+        """
+        return list(self.iter(path))
+
+    def iter(self, path: str) -> Iterator[Frame]:
+        """Iterate frames from a Vector ASC text trace without materializing it.
+
+        Args:
+            path: Filesystem path to the ASC file.
+
+        Yields:
+            Parsed CAN and CAN FD frames ordered by timestamp.
+
+        Raises:
+            OSError: If the ASC file cannot be opened.
+            ValueError: If no supported frames are found or a timestamp goes
+                backwards. Streaming import requires ordered timestamps.
         """
         trace_path = Path(path)
-        events: list[Frame] = []
         previous_ts_ns: Optional[int] = None
-        needs_sort = False
+        found = False
         with trace_path.open("r", encoding="utf-8", errors="ignore") as handle:
             for raw_line in handle:
                 event = self._parse_line(raw_line.strip(), trace_path)
                 if event is None:
                     continue
                 if previous_ts_ns is not None and event.ts_ns < previous_ts_ns:
-                    needs_sort = True
-                events.append(event)
+                    raise ValueError(
+                        "ASC timestamps are not monotonic; streaming import requires ordered frames."
+                    )
+                found = True
                 previous_ts_ns = event.ts_ns
-        if not events:
+                yield event
+        if not found:
             raise ValueError(f"No ASC frames found in {trace_path}.")
-        if needs_sort:
-            events.sort(key=lambda item: item.ts_ns)
-        return events
 
     def _parse_line(self, line: str, path: Path) -> Optional[Frame]:
         if self._should_skip(line):

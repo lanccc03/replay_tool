@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+import tempfile
 import unittest
 
 import tests.bootstrap  # noqa: F401
@@ -110,7 +111,8 @@ class ScenarioAndPlannerTests(unittest.TestCase):
             ReplayScenario.from_dict(payload)
 
     def test_asc_reader_parses_can_and_canfd(self) -> None:
-        events = AscTraceReader().read(str(ROOT / "examples" / "sample.asc"))
+        reader = AscTraceReader()
+        events = reader.read(str(ROOT / "examples" / "sample.asc"))
 
         self.assertEqual([BusType.CANFD, BusType.CAN], [item.bus for item in events])
         self.assertEqual(0x18DAF110, events[0].message_id)
@@ -119,27 +121,37 @@ class ScenarioAndPlannerTests(unittest.TestCase):
         self.assertEqual(0xC, events[0].dlc)
         self.assertEqual(24, len(events[0].payload))
         self.assertEqual(0x123, events[1].message_id)
+        self.assertEqual(events, list(reader.iter(str(ROOT / "examples" / "sample.asc"))))
 
     def test_planner_maps_trace_source_to_logical_channel(self) -> None:
-        app = ReplayApplication()
-        plan = app.compile_plan(ROOT / "examples" / "mock_canfd.json")
+        with tempfile.TemporaryDirectory() as tmp:
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+            plan = app.compile_plan(ROOT / "examples" / "mock_canfd.json")
 
         self.assertEqual("mock-canfd-demo", plan.name)
-        self.assertEqual(1, len(plan.frames))
-        self.assertEqual(0, plan.frames[0].channel)
+        self.assertFalse(hasattr(plan, "frames"))
+        self.assertEqual(1, len(plan.frame_sources))
+        self.assertEqual(1, plan.timeline_size)
+        self.assertEqual(0, plan.frame_sources[0].logical_channel)
+        self.assertEqual(0, plan.frame_sources[0].source_channel)
+        self.assertEqual(BusType.CANFD, plan.frame_sources[0].bus)
+        self.assertTrue(plan.frame_sources[0].path.endswith(".frames.bin"))
         self.assertEqual("mock0", plan.channels[0].device_id)
         self.assertEqual(0, plan.channels[0].physical_channel)
         self.assertEqual(BusType.CANFD, plan.channels[0].config.bus)
 
     def test_four_channel_tongxing_example_maps_all_sources(self) -> None:
-        app = ReplayApplication()
-        plan = app.compile_plan(ROOT / "examples" / "tongxing_tc1014_four_channel_canfd.json")
+        with tempfile.TemporaryDirectory() as tmp:
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+            plan = app.compile_plan(ROOT / "examples" / "tongxing_tc1014_four_channel_canfd.json")
 
         self.assertEqual("tongxing-tc1014-four-channel-canfd-smoke", plan.name)
-        self.assertEqual([0, 1, 2, 3], [frame.channel for frame in plan.frames])
-        self.assertEqual([0x18DAF110, 0x18DAF111, 0x18DAF112, 0x18DAF113], [frame.message_id for frame in plan.frames])
+        self.assertEqual([0, 1, 2, 3], [source.logical_channel for source in plan.frame_sources])
+        self.assertEqual([0, 1, 2, 3], [source.source_channel for source in plan.frame_sources])
+        self.assertEqual([1, 1, 1, 1], [source.frame_count for source in plan.frame_sources])
+        self.assertEqual(4, plan.timeline_size)
         self.assertEqual([0, 1, 2, 3], [channel.physical_channel for channel in plan.channels])
-        self.assertTrue(all(frame.brs for frame in plan.frames))
+        self.assertTrue(all(source.path.endswith(".frames.bin") for source in plan.frame_sources))
 
 
 if __name__ == "__main__":

@@ -49,6 +49,11 @@ Every subcommand currently accepts `--workspace <path>`. The default workspace
 is `.replay_tool` under the current directory. It stores imported trace files,
 metadata, and generated binary frame caches.
 
+`validate` and `run` resolve scenario trace paths through the Trace Library.
+When a scenario points at a raw `.asc` file, the application imports or reuses a
+workspace cache first, then replays from the `.frames.bin` cache through a
+streaming cursor instead of loading the full trace into `ReplayPlan`.
+
 Validate a scenario without sending frames:
 
 ```powershell
@@ -109,6 +114,10 @@ Delete an imported trace record and its managed library/cache files:
 ```powershell
 replay delete-trace [--workspace .replay_tool] <trace-id>
 ```
+
+Trace import streams ASC input into the binary cache and rejects out-of-order
+timestamps. The first streaming implementation does not support external
+sorting for unordered traces.
 
 List device channels for a hardware adapter:
 

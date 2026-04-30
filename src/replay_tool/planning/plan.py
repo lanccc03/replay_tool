@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import heapq
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
-from replay_tool.domain import ChannelConfig, DeviceConfig, Frame, ReplayRoute, ReplayScenario, ReplaySource
-from replay_tool.ports.trace import TraceReader
+from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, ReplayRoute, ReplayScenario, ReplaySource
+from replay_tool.ports.trace_store import TraceRecord
 
 
 @dataclass(frozen=True)
@@ -18,22 +16,37 @@ class PlannedChannel:
 
 
 @dataclass(frozen=True)
+class PlannedFrameSource:
+    trace_id: str
+    source_id: str
+    path: str
+    source_channel: int
+    bus: BusType
+    logical_channel: int
+    library_trace_id: str = ""
+    frame_count: int = 0
+    start_ns: int = 0
+    end_ns: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "source_channel", int(self.source_channel))
+        object.__setattr__(self, "logical_channel", int(self.logical_channel))
+        object.__setattr__(self, "frame_count", int(self.frame_count))
+        object.__setattr__(self, "start_ns", int(self.start_ns))
+        object.__setattr__(self, "end_ns", int(self.end_ns))
+        if not isinstance(self.bus, BusType):
+            object.__setattr__(self, "bus", BusType(self.bus))
+
+
+@dataclass(frozen=True)
 class ReplayPlan:
     name: str
-    frames: tuple[Frame, ...]
+    frame_sources: tuple[PlannedFrameSource, ...]
     devices: tuple[DeviceConfig, ...]
     channels: tuple[PlannedChannel, ...]
     loop: bool = False
-
-    @property
-    def total_ts_ns(self) -> int:
-        """Return the replay plan duration in nanoseconds.
-
-        Returns:
-            The timestamp of the final planned frame, or 0 when the plan has no
-            frames.
-        """
-        return self.frames[-1].ts_ns if self.frames else 0
+    timeline_size: int = 0
+    total_ts_ns: int = 0
 
     def channel_for_logical(self, logical_channel: int) -> PlannedChannel:
         """Find the planned target channel for a logical channel number.
@@ -54,23 +67,24 @@ class ReplayPlan:
 
 
 class ReplayPlanner:
-    def __init__(self, trace_reader: TraceReader) -> None:
-        self.trace_reader = trace_reader
-
-    def compile(self, scenario: ReplayScenario, *, base_dir: str | Path = ".") -> ReplayPlan:
+    def compile(
+        self,
+        scenario: ReplayScenario,
+        *,
+        base_dir: str | Path = ".",
+        trace_records: dict[str, TraceRecord] | None = None,
+    ) -> ReplayPlan:
         """Compile a user scenario into an executable replay plan.
 
         Args:
             scenario: Validated scenario configuration.
             base_dir: Directory used to resolve relative trace paths.
+            trace_records: Optional records keyed by scenario trace ID. When
+                present, the planner uses record metadata for timeline counts
+                and cache-backed replay source IDs.
 
         Returns:
-            A ReplayPlan with mapped frames sorted by replay timestamp.
-
-        Raises:
-            FileNotFoundError: If a referenced trace path cannot be opened by
-                the trace reader.
-            ValueError: If a trace reader rejects the trace content.
+            A ReplayPlan with cache-backed planned frame sources.
         """
         base_path = Path(base_dir)
         traces_by_id = {item.id: item for item in scenario.traces}
@@ -81,20 +95,31 @@ class ReplayPlanner:
             source = sources_by_id[route.source_id]
             routes_by_trace.setdefault(source.trace_id, []).append((route, source))
 
-        frame_groups: list[Sequence[Frame]] = []
+        records_by_trace = trace_records or {}
+        frame_sources: list[PlannedFrameSource] = []
         for trace_id, routes in routes_by_trace.items():
             trace = traces_by_id[trace_id]
             trace_path = Path(trace.path)
             if not trace_path.is_absolute():
                 trace_path = base_path / trace_path
-            trace_frames = self.trace_reader.read(str(trace_path))
-            mapped_frames: list[Frame] = []
             for route, source in routes:
-                mapped_frames.extend(self._map_frames(trace_frames, route, source))
-            mapped_frames.sort(key=lambda item: item.ts_ns)
-            frame_groups.append(mapped_frames)
+                record = records_by_trace.get(trace_id)
+                frame_count, start_ns, end_ns = _source_timing(record, source)
+                frame_sources.append(
+                    PlannedFrameSource(
+                        trace_id=trace_id,
+                        source_id=source.id,
+                        path=str(trace_path),
+                        source_channel=source.channel,
+                        bus=source.bus,
+                        logical_channel=route.logical_channel,
+                        library_trace_id=record.trace_id if record is not None else "",
+                        frame_count=frame_count,
+                        start_ns=start_ns,
+                        end_ns=end_ns,
+                    )
+                )
 
-        frames = tuple(heapq.merge(*frame_groups, key=lambda item: item.ts_ns)) if frame_groups else ()
         channels = tuple(
             PlannedChannel(
                 logical_channel=route.logical_channel,
@@ -104,17 +129,34 @@ class ReplayPlanner:
             )
             for route in scenario.routes
         )
+        timeline_size = sum(item.frame_count for item in frame_sources)
+        total_ts_ns = max((item.end_ns for item in frame_sources), default=0)
         return ReplayPlan(
             name=scenario.name,
-            frames=frames,
+            frame_sources=tuple(frame_sources),
             devices=scenario.devices,
             channels=channels,
             loop=scenario.timeline.loop,
+            timeline_size=timeline_size,
+            total_ts_ns=total_ts_ns,
         )
 
-    def _map_frames(self, frames: Sequence[Frame], route: ReplayRoute, source: ReplaySource) -> list[Frame]:
-        return [
-            frame.clone(channel=route.logical_channel)
-            for frame in frames
-            if frame.channel == source.channel and frame.bus == source.bus
-        ]
+
+def _source_timing(record: TraceRecord | None, source: ReplaySource) -> tuple[int, int, int]:
+    if record is None:
+        return 0, 0, 0
+    source_items = record.metadata.get("source_summaries")
+    if isinstance(source_items, list):
+        for item in source_items:
+            if not isinstance(item, dict):
+                continue
+            if int(item.get("source_channel", -1)) != source.channel:
+                continue
+            if BusType(item.get("bus")) != source.bus:
+                continue
+            return (
+                int(item.get("frame_count", 0)),
+                int(item.get("start_ns", record.start_ns)),
+                int(item.get("end_ns", record.end_ns)),
+            )
+    return record.event_count, record.start_ns, record.end_ns
