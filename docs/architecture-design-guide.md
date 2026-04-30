@@ -103,7 +103,10 @@ storage  -> ports + domain
 - `ChannelConfig`
 - `TraceConfig`
 - `DeviceConfig`
-- `ChannelBinding`
+- `ReplaySource`
+- `ReplayTarget`
+- `ReplayRoute`
+- `TimelineConfig`
 - `ReplayScenario`
 - `ReplaySnapshot`
 
@@ -238,8 +241,8 @@ storage/
 
 当前回放时：
 
-- schema v1 仍可直接引用文件路径。
-- schema v1 也可把 `traces[].path` 写成已导入 trace id，由 app 层解析到 cache。
+- schema v2 可直接引用文件路径。
+- schema v2 也可把 `traces[].path` 写成已导入 trace id，由 app 层解析到 cache。
 - planner 仍会把当前场景相关帧编译进 `ReplayPlan`。
 - Trace Store 已提供 source filter 与时间窗口读取 API；planner 仍按场景编译整段 `ReplayPlan`。
 - 目前仅支持 ASC；BLF 解析仍未实现。
@@ -328,8 +331,7 @@ trace import
     -> binary cache + index + summaries
 
 scenario
-    -> schema validation
-    -> migration if needed
+    -> schema v2 validation
     -> ReplayPlanner
     -> ReplayPlan
 
@@ -343,29 +345,38 @@ ReplayPlan
 
 ## 6. Scenario 与 ReplayPlan
 
-当前 Scenario 使用 JSON，`schema_version=1`。它是 MVP 格式，不是最终产品格式。
+当前 Scenario 使用 JSON，`schema_version=2`。v2 不兼容旧 v1 文件；迁移是一次性更新仓库内 examples / tests / docs，不在运行时提供 v1 fallback。
 
 当前最小形态：
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "mock-canfd-demo",
   "traces": [{"id": "trace1", "path": "sample.asc"}],
   "devices": [{"id": "mock0", "driver": "mock"}],
-  "channels": [{
-    "logical_channel": 0,
-    "trace_id": "trace1",
-    "source_channel": 0,
-    "device_id": "mock0",
+  "sources": [{
+    "id": "trace1-canfd0",
+    "trace": "trace1",
+    "channel": 0,
+    "bus": "CANFD"
+  }],
+  "targets": [{
+    "id": "mock0-canfd0",
+    "device": "mock0",
     "physical_channel": 0,
     "bus": "CANFD"
   }],
-  "replay": {"loop": false}
+  "routes": [{
+    "logical_channel": 0,
+    "source": "trace1-canfd0",
+    "target": "mock0-canfd0"
+  }],
+  "timeline": {"loop": false}
 }
 ```
 
-下一版建议演进到更清晰的嵌套结构：
+v2 把 trace 资源、trace 来源、设备目标和路由拆开：
 
 ```yaml
 schema_version: 2
@@ -388,21 +399,37 @@ channels:
 devices:
   - id: tx0
     driver: tongxing
-    model: TC1014
-    config:
-      nominal_baud: 500000
-      data_baud: 2000000
+    device_type: TC1014
+
+sources:
+  - id: trace_1_canfd0
+    trace: trace_1
+    channel: 0
+    bus: CANFD
+
+targets:
+  - id: tx0_canfd0
+    device: tx0
+    physical_channel: 0
+    bus: CANFD
+    nominal_baud: 500000
+    data_baud: 2000000
+
+routes:
+  - logical_channel: 0
+    source: trace_1_canfd0
+    target: tx0_canfd0
 
 timeline:
-  diagnostics: []
-  link_actions: []
+  loop: false
 ```
 
 演进要求：
 
 - 保留 schema version。
-- 增加 migration 模块。
-- 校验错误要结构化，不要只抛字符串。
+- 当前不保留 v1 兼容入口。
+- 后续如需重新支持历史文件，应单独增加 migration 模块。
+- 后续校验错误要结构化，不要只抛字符串。
 - UI 草稿格式与运行格式分开。
 - Runtime 不直接读取 Scenario，只读取 ReplayPlan。
 
@@ -669,12 +696,12 @@ replay-tool delete-trace <trace-id>
 - Mock 回放。
 - 同星 adapter。
 - ASC reader。
-- Trace Library v2：导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，schema v1 trace id 引用。
+- Trace Library v2：导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，schema v2 trace id 引用。
 - fake TSMaster 单测。
 
 尚未具备：
 
-- schema v2 和 migration。
+- 历史 schema migration（本轮明确不支持 v1 运行兼容）。
 - trace index 与增量索引查询。
 - DBC / 信号覆盖。
 - CAN UDS / DoIP / DTC。

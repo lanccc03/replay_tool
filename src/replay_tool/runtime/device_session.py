@@ -50,7 +50,7 @@ class ReplayDeviceSession:
             device.open()
             self._devices[config.id] = device
         for channel in plan.channels:
-            self._devices[channel.device_id].start_channel(channel.physical_channel, channel.binding.config)
+            self._devices[channel.device_id].start_channel(channel.physical_channel, channel.config)
 
     def route_frame(self, frame: Frame) -> RoutedFrame:
         """Map a logical frame to its physical device endpoint.

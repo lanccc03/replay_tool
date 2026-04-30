@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "mock-canfd-demo",
   "traces": [
     {
@@ -21,12 +21,18 @@
       }
     }
   ],
-  "channels": [
+  "sources": [
     {
-      "logical_channel": 0,
-      "trace_id": "trace1",
-      "source_channel": 0,
-      "device_id": "mock0",
+      "id": "trace1-canfd0",
+      "trace": "trace1",
+      "channel": 0,
+      "bus": "CANFD"
+    }
+  ],
+  "targets": [
+    {
+      "id": "mock0-canfd0",
+      "device": "mock0",
       "physical_channel": 0,
       "bus": "CANFD",
       "nominal_baud": 500000,
@@ -36,7 +42,14 @@
       "tx_echo": false
     }
   ],
-  "replay": {
+  "routes": [
+    {
+      "logical_channel": 0,
+      "source": "trace1-canfd0",
+      "target": "mock0-canfd0"
+    }
+  ],
+  "timeline": {
     "loop": false
   }
 }

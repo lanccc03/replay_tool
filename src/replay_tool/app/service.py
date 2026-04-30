@@ -186,8 +186,10 @@ class ReplayApplication:
             name=scenario.name,
             traces=resolved_traces,
             devices=scenario.devices,
-            channels=scenario.channels,
-            replay=scenario.replay,
+            sources=scenario.sources,
+            targets=scenario.targets,
+            routes=scenario.routes,
+            timeline=scenario.timeline,
         )
 
     def _resolve_trace_config(self, trace: TraceConfig, *, base_dir: Path) -> TraceConfig:

@@ -62,6 +62,24 @@ the scenario file:
 replay run [--workspace .replay_tool] <scenario.json>
 ```
 
+Scenario files use `schema_version=2`. The v2 shape separates trace resources,
+trace sources, device targets, and routes:
+
+```json
+{
+  "schema_version": 2,
+  "name": "mock-canfd-demo",
+  "traces": [{"id": "trace1", "path": "sample.asc"}],
+  "devices": [{"id": "mock0", "driver": "mock"}],
+  "sources": [{"id": "trace1-canfd0", "trace": "trace1", "channel": 0, "bus": "CANFD"}],
+  "targets": [{"id": "mock0-canfd0", "device": "mock0", "physical_channel": 0, "bus": "CANFD"}],
+  "routes": [{"logical_channel": 0, "source": "trace1-canfd0", "target": "mock0-canfd0"}],
+  "timeline": {"loop": false}
+}
+```
+
+Older `schema_version=1` scenario files are not accepted by the current CLI.
+
 Import an ASC trace into the Trace Library:
 
 ```powershell

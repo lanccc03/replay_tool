@@ -146,18 +146,44 @@ class DeviceConfig:
 
 
 @dataclass(frozen=True)
-class ChannelBinding:
-    logical_channel: int
+class ReplaySource:
+    id: str
     trace_id: str
-    source_channel: int
+    channel: int
+    bus: BusType
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "channel", int(self.channel))
+        if not isinstance(self.bus, BusType):
+            object.__setattr__(self, "bus", BusType(self.bus))
+
+
+@dataclass(frozen=True)
+class ReplayTarget:
+    id: str
     device_id: str
     physical_channel: int
     config: ChannelConfig
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "physical_channel", int(self.physical_channel))
+
 
 @dataclass(frozen=True)
-class ReplayOptions:
+class ReplayRoute:
+    logical_channel: int
+    source_id: str
+    target_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "logical_channel", int(self.logical_channel))
+
+
+@dataclass(frozen=True)
+class TimelineConfig:
     loop: bool = False
+    diagnostics: tuple[dict[str, Any], ...] = ()
+    link_actions: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,12 +192,14 @@ class ReplayScenario:
     name: str
     traces: tuple[TraceConfig, ...]
     devices: tuple[DeviceConfig, ...]
-    channels: tuple[ChannelBinding, ...]
-    replay: ReplayOptions = ReplayOptions()
+    sources: tuple[ReplaySource, ...]
+    targets: tuple[ReplayTarget, ...]
+    routes: tuple[ReplayRoute, ...]
+    timeline: TimelineConfig = TimelineConfig()
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ReplayScenario":
-        """Build and validate a replay scenario from a schema v1 mapping.
+        """Build and validate a replay scenario from a schema v2 mapping.
 
         Args:
             payload: Parsed scenario JSON payload.
@@ -184,8 +212,11 @@ class ReplayScenario:
                 invalid.
             KeyError: If required schema fields are missing.
         """
-        if int(payload.get("schema_version", 0)) != 1:
-            raise ValueError("Only scenario schema_version=1 is supported.")
+        if int(payload.get("schema_version", 0)) != 2:
+            raise ValueError("Only scenario schema_version=2 is supported.")
+        timeline_payload = payload.get("timeline")
+        if not isinstance(timeline_payload, dict):
+            raise ValueError("Scenario must define timeline settings.")
         traces = tuple(
             TraceConfig(id=str(item["id"]), path=str(item["path"]))
             for item in payload.get("traces", [])
@@ -203,12 +234,19 @@ class ReplayScenario:
             )
             for item in payload.get("devices", [])
         )
-        channels = tuple(
-            ChannelBinding(
-                logical_channel=int(item["logical_channel"]),
-                trace_id=str(item["trace_id"]),
-                source_channel=int(item["source_channel"]),
-                device_id=str(item["device_id"]),
+        sources = tuple(
+            ReplaySource(
+                id=str(item["id"]),
+                trace_id=str(item["trace"]),
+                channel=int(item["channel"]),
+                bus=BusType(item["bus"]),
+            )
+            for item in payload.get("sources", [])
+        )
+        targets = tuple(
+            ReplayTarget(
+                id=str(item["id"]),
+                device_id=str(item["device"]),
                 physical_channel=int(item["physical_channel"]),
                 config=ChannelConfig(
                     bus=BusType(item["bus"]),
@@ -219,15 +257,30 @@ class ReplayScenario:
                     tx_echo=bool(item.get("tx_echo", False)),
                 ),
             )
-            for item in payload.get("channels", [])
+            for item in payload.get("targets", [])
+        )
+        routes = tuple(
+            ReplayRoute(
+                logical_channel=int(item["logical_channel"]),
+                source_id=str(item["source"]),
+                target_id=str(item["target"]),
+            )
+            for item in payload.get("routes", [])
+        )
+        timeline = TimelineConfig(
+            loop=bool(timeline_payload.get("loop", False)),
+            diagnostics=tuple(dict(item) for item in timeline_payload.get("diagnostics", [])),
+            link_actions=tuple(dict(item) for item in timeline_payload.get("link_actions", [])),
         )
         scenario = cls(
-            schema_version=1,
+            schema_version=2,
             name=str(payload["name"]),
             traces=traces,
             devices=devices,
-            channels=channels,
-            replay=ReplayOptions(loop=bool(payload.get("replay", {}).get("loop", False))),
+            sources=sources,
+            targets=targets,
+            routes=routes,
+            timeline=timeline,
         )
         scenario.validate()
         return scenario
@@ -236,22 +289,74 @@ class ReplayScenario:
         """Validate required scenario collections and cross references.
 
         Raises:
-            ValueError: If traces, devices, channels, or referenced IDs are
+            ValueError: If traces, devices, sources, targets, routes, or referenced IDs are
                 missing.
         """
         if not self.traces:
             raise ValueError("Scenario must define at least one trace.")
         if not self.devices:
             raise ValueError("Scenario must define at least one device.")
-        if not self.channels:
-            raise ValueError("Scenario must define at least one channel.")
+        if not self.sources:
+            raise ValueError("Scenario must define at least one source.")
+        if not self.targets:
+            raise ValueError("Scenario must define at least one target.")
+        if not self.routes:
+            raise ValueError("Scenario must define at least one route.")
+        _validate_ids("trace IDs", [item.id for item in self.traces])
+        _validate_ids("device IDs", [item.id for item in self.devices])
+        _validate_ids("source IDs", [item.id for item in self.sources])
+        _validate_ids("target IDs", [item.id for item in self.targets])
+        _validate_ids(
+            "scenario resource IDs",
+            [item.id for item in self.traces]
+            + [item.id for item in self.devices]
+            + [item.id for item in self.sources]
+            + [item.id for item in self.targets],
+        )
+        _validate_ids("logical channels", [str(item.logical_channel) for item in self.routes])
         trace_ids = {item.id for item in self.traces}
         device_ids = {item.id for item in self.devices}
-        for channel in self.channels:
-            if channel.trace_id not in trace_ids:
-                raise ValueError(f"Channel references unknown trace: {channel.trace_id}")
-            if channel.device_id not in device_ids:
-                raise ValueError(f"Channel references unknown device: {channel.device_id}")
+        sources_by_id = {item.id: item for item in self.sources}
+        targets_by_id = {item.id: item for item in self.targets}
+        for source in self.sources:
+            if source.trace_id not in trace_ids:
+                raise ValueError(f"Source references unknown trace: {source.trace_id}")
+        for target in self.targets:
+            if target.device_id not in device_ids:
+                raise ValueError(f"Target references unknown device: {target.device_id}")
+        for route in self.routes:
+            source = sources_by_id.get(route.source_id)
+            if source is None:
+                raise ValueError(f"Route references unknown source: {route.source_id}")
+            target = targets_by_id.get(route.target_id)
+            if target is None:
+                raise ValueError(f"Route references unknown target: {route.target_id}")
+            if source.bus != target.config.bus:
+                raise ValueError(
+                    "Route {logical_channel} connects {source_bus} source to {target_bus} target.".format(
+                        logical_channel=route.logical_channel,
+                        source_bus=source.bus.value,
+                        target_bus=target.config.bus.value,
+                    )
+                )
+        if self.timeline.diagnostics:
+            raise ValueError("Scenario timeline diagnostics are not supported yet.")
+        if self.timeline.link_actions:
+            raise ValueError("Scenario timeline link_actions are not supported yet.")
+
+
+def _validate_ids(label: str, values: list[str]) -> None:
+    missing = [value for value in values if not value]
+    if missing:
+        raise ValueError(f"Scenario {label} cannot be empty.")
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for value in values:
+        if value in seen and value not in duplicates:
+            duplicates.append(value)
+        seen.add(value)
+    if duplicates:
+        raise ValueError(f"Scenario {label} must be unique: {', '.join(duplicates)}")
 
 
 @dataclass(frozen=True)

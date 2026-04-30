@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from replay_tool.domain import ChannelBinding, DeviceConfig, Frame, ReplayScenario
+from replay_tool.domain import ChannelConfig, DeviceConfig, Frame, ReplayRoute, ReplayScenario, ReplaySource
 from replay_tool.ports.trace import TraceReader
 
 
@@ -14,7 +14,7 @@ class PlannedChannel:
     logical_channel: int
     device_id: str
     physical_channel: int
-    binding: ChannelBinding
+    config: ChannelConfig
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class ReplayPlan:
             logical_channel: Logical replay channel assigned to a frame.
 
         Returns:
-            The matching planned channel binding.
+            The matching planned channel route.
 
         Raises:
             KeyError: If the logical channel is not part of this plan.
@@ -74,44 +74,47 @@ class ReplayPlanner:
         """
         base_path = Path(base_dir)
         traces_by_id = {item.id: item for item in scenario.traces}
-        bindings_by_trace: dict[str, list[ChannelBinding]] = {}
-        for binding in scenario.channels:
-            bindings_by_trace.setdefault(binding.trace_id, []).append(binding)
+        sources_by_id = {item.id: item for item in scenario.sources}
+        targets_by_id = {item.id: item for item in scenario.targets}
+        routes_by_trace: dict[str, list[tuple[ReplayRoute, ReplaySource]]] = {}
+        for route in scenario.routes:
+            source = sources_by_id[route.source_id]
+            routes_by_trace.setdefault(source.trace_id, []).append((route, source))
 
         frame_groups: list[Sequence[Frame]] = []
-        for trace_id, bindings in bindings_by_trace.items():
+        for trace_id, routes in routes_by_trace.items():
             trace = traces_by_id[trace_id]
             trace_path = Path(trace.path)
             if not trace_path.is_absolute():
                 trace_path = base_path / trace_path
             trace_frames = self.trace_reader.read(str(trace_path))
             mapped_frames: list[Frame] = []
-            for binding in bindings:
-                mapped_frames.extend(self._map_frames(trace_frames, binding))
+            for route, source in routes:
+                mapped_frames.extend(self._map_frames(trace_frames, route, source))
             mapped_frames.sort(key=lambda item: item.ts_ns)
             frame_groups.append(mapped_frames)
 
         frames = tuple(heapq.merge(*frame_groups, key=lambda item: item.ts_ns)) if frame_groups else ()
         channels = tuple(
             PlannedChannel(
-                logical_channel=item.logical_channel,
-                device_id=item.device_id,
-                physical_channel=item.physical_channel,
-                binding=item,
+                logical_channel=route.logical_channel,
+                device_id=targets_by_id[route.target_id].device_id,
+                physical_channel=targets_by_id[route.target_id].physical_channel,
+                config=targets_by_id[route.target_id].config,
             )
-            for item in scenario.channels
+            for route in scenario.routes
         )
         return ReplayPlan(
             name=scenario.name,
             frames=frames,
             devices=scenario.devices,
             channels=channels,
-            loop=scenario.replay.loop,
+            loop=scenario.timeline.loop,
         )
 
-    def _map_frames(self, frames: Sequence[Frame], binding: ChannelBinding) -> list[Frame]:
+    def _map_frames(self, frames: Sequence[Frame], route: ReplayRoute, source: ReplaySource) -> list[Frame]:
         return [
-            frame.clone(channel=binding.logical_channel)
+            frame.clone(channel=route.logical_channel)
             for frame in frames
-            if frame.channel == binding.source_channel and frame.bus == binding.config.bus
+            if frame.channel == source.channel and frame.bus == source.bus
         ]

@@ -70,13 +70,7 @@ class RuntimeTests(unittest.TestCase):
                     logical_channel=0,
                     device_id="mock0",
                     physical_channel=1,
-                    binding=type(
-                        "Binding",
-                        (),
-                        {
-                            "config": channel_config,
-                        },
-                    )(),
+                    config=channel_config,
                 ),
             ),
             loop=loop,
@@ -153,10 +147,10 @@ class RuntimeTests(unittest.TestCase):
                 DeviceConfig(id="dev1", driver="recording"),
             ),
             channels=(
-                PlannedChannel(0, "dev0", 0, type("Binding", (), {"config": channel_config})()),
-                PlannedChannel(1, "dev0", 1, type("Binding", (), {"config": channel_config})()),
-                PlannedChannel(2, "dev1", 0, type("Binding", (), {"config": channel_config})()),
-                PlannedChannel(3, "dev1", 1, type("Binding", (), {"config": channel_config})()),
+                PlannedChannel(0, "dev0", 0, channel_config),
+                PlannedChannel(1, "dev0", 1, channel_config),
+                PlannedChannel(2, "dev1", 0, channel_config),
+                PlannedChannel(3, "dev1", 1, channel_config),
             ),
         )
         clock = ManualClock()
@@ -196,7 +190,7 @@ class RuntimeTests(unittest.TestCase):
             ),
             devices=(DeviceConfig(id="dev0", driver="recording"),),
             channels=tuple(
-                PlannedChannel(index, "dev0", index, type("Binding", (), {"config": channel_config})())
+                PlannedChannel(index, "dev0", index, channel_config)
                 for index in range(3)
             ),
         )

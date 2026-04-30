@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "tongxing-tc1014-canfd-demo",
   "traces": [
     {
@@ -18,12 +18,18 @@
       "project_path": ""
     }
   ],
-  "channels": [
+  "sources": [
     {
-      "logical_channel": 0,
-      "trace_id": "trace1",
-      "source_channel": 1,
-      "device_id": "tx0",
+      "id": "trace1-canfd1",
+      "trace": "trace1",
+      "channel": 1,
+      "bus": "CANFD"
+    }
+  ],
+  "targets": [
+    {
+      "id": "tx0-canfd0",
+      "device": "tx0",
       "physical_channel": 0,
       "bus": "CANFD",
       "nominal_baud": 500000,
@@ -33,7 +39,14 @@
       "tx_echo": false
     }
   ],
-  "replay": {
+  "routes": [
+    {
+      "logical_channel": 0,
+      "source": "trace1-canfd1",
+      "target": "tx0-canfd0"
+    }
+  ],
+  "timeline": {
     "loop": false
   }
 }
