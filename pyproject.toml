@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 replay-tool = "replay_tool.cli:main"
+replay = "replay_tool.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/replay_tool"]

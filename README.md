@@ -17,19 +17,96 @@ The architecture and design guide is maintained in
 
 ## Commands
 
-Install and run with uv when available:
+Install the local environment once:
 
 ```powershell
 uv sync
-uv run replay-tool validate examples/mock_canfd.json
-uv run replay-tool run examples/mock_canfd.json
-uv run replay-tool import examples/sample.asc
-uv run replay-tool traces
-uv run replay-tool inspect <trace-id>
-uv run python -m unittest discover -s tests -v
 ```
 
-Without uv, use Python directly from this directory:
+After that, run the CLI with the short `replay` command:
+
+```powershell
+replay validate examples/mock_canfd.json
+replay run examples/mock_canfd.json
+replay import examples/sample.asc
+replay traces
+replay inspect <trace-id>
+```
+
+The longer `replay-tool` command is still available as a compatibility alias.
+If `replay` is not found after editing `pyproject.toml`, run `uv sync` again
+or activate the local `.venv`.
+
+### CLI usage
+
+General form:
+
+```powershell
+replay <command> [options]
+```
+
+Every subcommand currently accepts `--workspace <path>`. The default workspace
+is `.replay_tool` under the current directory. It stores imported trace files,
+metadata, and generated binary frame caches.
+
+Validate a scenario without sending frames:
+
+```powershell
+replay validate [--workspace .replay_tool] <scenario.json>
+```
+
+Compile and run a scenario. Frames are sent through the devices configured in
+the scenario file:
+
+```powershell
+replay run [--workspace .replay_tool] <scenario.json>
+```
+
+Import an ASC trace into the Trace Library:
+
+```powershell
+replay import [--workspace .replay_tool] <trace.asc>
+```
+
+List imported traces:
+
+```powershell
+replay traces [--workspace .replay_tool]
+```
+
+Inspect one imported trace, including source-channel and message-ID summaries:
+
+```powershell
+replay inspect [--workspace .replay_tool] <trace-id>
+```
+
+Rebuild an imported trace's binary frame cache from its copied source file:
+
+```powershell
+replay rebuild-cache [--workspace .replay_tool] <trace-id>
+```
+
+Delete an imported trace record and its managed library/cache files:
+
+```powershell
+replay delete-trace [--workspace .replay_tool] <trace-id>
+```
+
+List device channels for a hardware adapter:
+
+```powershell
+replay devices [--workspace .replay_tool] [--driver tongxing] [--sdk-root TSMaster/Windows] [--application ReplayTool] [--device-type TC1014] [--device-index 0]
+```
+
+Device option defaults:
+
+- `--driver`: device adapter name, default `tongxing`.
+- `--sdk-root`: SDK root directory, default `TSMaster/Windows`.
+- `--application`: TSMaster application name, default `ReplayTool`.
+- `--device-type`: hardware model, default `TC1014`.
+- `--device-index`: hardware index, default `0`.
+
+Without uv or an installed script, use Python directly from this directory:
 
 ```powershell
 $env:PYTHONPATH = (Join-Path $PWD "src")
@@ -48,8 +125,8 @@ The Tongxing adapter loads the SDK from `TSMaster/Windows` by default. It import
 Hardware validation must be done on Windows with TSMaster installed and a connected Tongxing device:
 
 ```powershell
-uv run replay-tool devices --driver tongxing
-uv run replay-tool run examples/tongxing_tc1014_canfd.json
+replay devices --driver tongxing
+replay run examples/tongxing_tc1014_canfd.json
 ```
 
 Use [`docs/tongxing-hardware-validation.md`](docs/tongxing-hardware-validation.md)
