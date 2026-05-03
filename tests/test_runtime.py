@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 import time
 import unittest
 
@@ -68,7 +68,7 @@ class InMemoryTraceReader:
         self,
         path: str,
         *,
-        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        source_filters: set[tuple[int, BusType]] | None = None,
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[Frame]:
@@ -83,7 +83,7 @@ class InMemoryTraceReader:
         Yields:
             Matching frames.
         """
-        filters = set(source_filters or ())
+        filters = source_filters or set()
         for frame in self.frames_by_path[path]:
             if filters and (frame.channel, frame.bus) not in filters:
                 continue

@@ -29,6 +29,8 @@ DEFAULT_CHANNEL_COUNT = 4
 
 
 class TongxingApiLoader:
+    """Resolve and import the bundled TSMaster Python API package."""
+
     def load(self, sdk_root: str) -> tuple[ModuleType, ModuleType | None]:
         """Load the TSMaster Python API package.
 
@@ -62,6 +64,8 @@ class TongxingApiLoader:
 
 
 class TongxingDevice:
+    """Tongxing/TSMaster BusDevice adapter for Windows hardware sessions."""
+
     def __init__(
         self,
         config: DeviceConfig,

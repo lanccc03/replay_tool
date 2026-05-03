@@ -15,6 +15,9 @@ dependencies = []
 replay-tool = "replay_tool.cli:main"
 replay = "replay_tool.cli:main"
 
+[tool.ruff]
+line-length = 120
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/replay_tool"]
 

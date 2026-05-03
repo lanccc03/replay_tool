@@ -12,6 +12,8 @@ from replay_tool.domain import (
 
 
 class BusDevice(Protocol):
+    """Port implemented by bus device adapters used by the runtime."""
+
     def open(self) -> DeviceInfo:
         """Open the device session.
 

@@ -10,6 +10,8 @@ DeviceFactory = Callable[[DeviceConfig], BusDevice]
 
 
 class DeviceRegistry:
+    """Factory registry that maps driver names to device adapters."""
+
     def __init__(self) -> None:
         self._factories: dict[str, DeviceFactory] = {}
 

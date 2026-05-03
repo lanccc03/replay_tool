@@ -11,6 +11,8 @@ ASC_DIRECTIONS = frozenset({"rx", "tx"})
 
 
 class AscTraceReader:
+    """Streaming parser for Vector ASC CAN and CAN FD traces."""
+
     def read(self, path: str) -> list[Frame]:
         """Read replay frames from a Vector ASC text trace.
 

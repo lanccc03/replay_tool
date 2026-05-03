@@ -9,6 +9,8 @@ from replay_tool.ports.trace_store import TraceRecord
 
 @dataclass(frozen=True)
 class PlannedChannel:
+    """Resolved logical-to-physical channel route for runtime dispatch."""
+
     logical_channel: int
     device_id: str
     physical_channel: int
@@ -17,6 +19,8 @@ class PlannedChannel:
 
 @dataclass(frozen=True)
 class PlannedFrameSource:
+    """Trace source prepared for streaming replay with timing metadata."""
+
     trace_id: str
     source_id: str
     path: str
@@ -40,6 +44,8 @@ class PlannedFrameSource:
 
 @dataclass(frozen=True)
 class ReplayPlan:
+    """Executable replay configuration consumed directly by the runtime."""
+
     name: str
     frame_sources: tuple[PlannedFrameSource, ...]
     devices: tuple[DeviceConfig, ...]
@@ -67,6 +73,8 @@ class ReplayPlan:
 
 
 class ReplayPlanner:
+    """Compile validated scenarios into executable replay plans."""
+
     def compile(
         self,
         scenario: ReplayScenario,

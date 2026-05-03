@@ -28,6 +28,8 @@ JSON_CACHE_SUFFIX = ".frames.json"
 
 
 class ManagedTraceReader:
+    """TraceReader that dispatches between raw ASC files and binary frame caches."""
+
     def __init__(self) -> None:
         self.asc_reader = AscTraceReader()
 
@@ -46,7 +48,7 @@ class ManagedTraceReader:
         self,
         path: str,
         *,
-        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        source_filters: set[tuple[int, BusType]] | None = None,
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[Frame]:
@@ -54,7 +56,7 @@ class ManagedTraceReader:
 
         Args:
             path: Path to an ASC trace or binary frame cache.
-            source_filters: Optional `(source_channel, bus)` pairs to include.
+            source_filters: Optional normalized `(source_channel, bus)` pairs to include.
             start_ns: Optional inclusive lower timestamp bound.
             end_ns: Optional exclusive upper timestamp bound.
 
@@ -78,9 +80,8 @@ class ManagedTraceReader:
             raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
         if trace_path.suffix.lower() != ".asc":
             raise ValueError(f"Unsupported trace format: {trace_path.suffix}")
-        normalized_filters = normalize_source_filters(source_filters)
         for frame in self.asc_reader.iter(str(trace_path)):
-            if normalized_filters is not None and (frame.channel, frame.bus) not in normalized_filters:
+            if source_filters is not None and (frame.channel, frame.bus) not in source_filters:
                 continue
             if start_ns is not None and frame.ts_ns < int(start_ns):
                 continue
@@ -90,6 +91,8 @@ class ManagedTraceReader:
 
 
 class SqliteTraceStore:
+    """SQLite-backed TraceStore with managed trace copies and binary caches."""
+
     def __init__(self, root: str | Path, trace_reader: ManagedTraceReader | None = None) -> None:
         self.root = Path(root)
         self.trace_dir = self.root / "traces"
@@ -621,6 +624,8 @@ class SqliteTraceStore:
 
 
 class _TraceSummaryBuilder:
+    """Accumulate source and message summaries while streaming trace import."""
+
     def __init__(self) -> None:
         self.event_count = 0
         self.start_ns = 0

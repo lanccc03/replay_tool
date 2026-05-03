@@ -9,6 +9,8 @@ from replay_tool.domain import BusType, Frame
 
 @dataclass(frozen=True)
 class TraceRecord:
+    """Metadata for one trace imported into the managed trace library."""
+
     trace_id: str
     name: str
     original_path: str
@@ -23,6 +25,8 @@ class TraceRecord:
 
 @dataclass(frozen=True)
 class TraceSourceSummary:
+    """Frame count summary for one source channel and bus."""
+
     source_channel: int
     bus: BusType
     frame_count: int
@@ -30,6 +34,8 @@ class TraceSourceSummary:
 
 @dataclass(frozen=True)
 class TraceMessageSummary:
+    """Message ID summary for one source channel and bus."""
+
     source_channel: int
     bus: BusType
     frame_count: int
@@ -38,6 +44,8 @@ class TraceMessageSummary:
 
 @dataclass(frozen=True)
 class TraceInspection:
+    """Inspection result combining trace metadata and summaries."""
+
     record: TraceRecord
     sources: tuple[TraceSourceSummary, ...]
     messages: tuple[TraceMessageSummary, ...]
@@ -45,6 +53,8 @@ class TraceInspection:
 
 @dataclass(frozen=True)
 class DeleteTraceResult:
+    """Outcome of deleting one imported trace and its managed files."""
+
     trace_id: str
     name: str
     deleted_library_file: bool
@@ -52,6 +62,8 @@ class DeleteTraceResult:
 
 
 class TraceStore(Protocol):
+    """Port for managed trace library storage and cache access."""
+
     def import_trace(self, source_path: str) -> TraceRecord:
         """Import a source trace into managed storage.
 

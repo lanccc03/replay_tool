@@ -27,6 +27,8 @@ def build_default_registry() -> DeviceRegistry:
 
 
 class ReplayApplication:
+    """Coordinate scenario, planning, trace library, and runtime use cases."""
+
     def __init__(
         self,
         *,

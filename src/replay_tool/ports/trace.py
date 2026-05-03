@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Protocol
 
 from replay_tool.domain import BusType, Frame
 
 
 class TraceReader(Protocol):
+    """Port for reading raw or cached trace frames."""
+
     def read(self, path: str) -> list[Frame]:
         """Read replay frames from a trace path.
 
@@ -22,7 +24,7 @@ class TraceReader(Protocol):
         self,
         path: str,
         *,
-        source_filters: Iterable[tuple[int, BusType]] | None = None,
+        source_filters: set[tuple[int, BusType]] | None = None,
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[Frame]:
@@ -30,7 +32,7 @@ class TraceReader(Protocol):
 
         Args:
             path: Filesystem path to a supported trace or cache file.
-            source_filters: Optional `(source_channel, bus)` pairs to include.
+            source_filters: Optional normalized `(source_channel, bus)` pairs to include.
             start_ns: Optional inclusive lower timestamp bound.
             end_ns: Optional exclusive upper timestamp bound.
 

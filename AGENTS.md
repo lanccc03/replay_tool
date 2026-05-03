@@ -38,6 +38,7 @@
 - `domain` 保持纯数据和纯逻辑，不依赖文件系统、SQLite、TSMaster、Qt 或外部 SDK。
 - `runtime` 只执行 `ReplayPlan`，不要让运行时重新解释原始 Scenario。
 - 设备能力先定义 port，再写 adapter；测试优先使用 fake SDK 或 mock device。
+- 新增或修改项目自有类时，必须维护类级 docstring，简要说明类的职责和边界；存在关键不变量时一并写清。
 - 新增或修改公共函数 / 方法时，必须添加或维护 Google 风格 docstring，说明 Args、Returns、Raises 等适用信息。
 - 涉及复杂功能、显著重构或高风险迁移时，遵守第 4 节 ExecPlans 规则。
 

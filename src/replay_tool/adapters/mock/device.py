@@ -13,6 +13,8 @@ from replay_tool.domain import (
 
 
 class MockDevice:
+    """In-memory BusDevice implementation for tests and local replay."""
+
     def __init__(self, config: DeviceConfig) -> None:
         self.config = config
         self.opened = False

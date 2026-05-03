@@ -6,11 +6,15 @@ from typing import Any
 
 
 class BusType(str, Enum):
+    """Supported bus families that replay scenarios and frames can use."""
+
     CAN = "CAN"
     CANFD = "CANFD"
 
 
 class ReplayState(str, Enum):
+    """Lifecycle states reported by a replay runtime."""
+
     STOPPED = "STOPPED"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
@@ -76,6 +80,8 @@ def canfd_payload_length_from_dlc(dlc: int) -> int:
 
 @dataclass(frozen=True)
 class Frame:
+    """Immutable normalized bus frame used across planning, storage, and runtime."""
+
     ts_ns: int
     bus: BusType
     channel: int
@@ -113,6 +119,8 @@ class Frame:
 
 @dataclass(frozen=True)
 class ChannelConfig:
+    """Physical bus channel settings applied before replay transmission."""
+
     bus: BusType
     nominal_baud: int = 500000
     data_baud: int = 2000000
@@ -129,12 +137,16 @@ class ChannelConfig:
 
 @dataclass(frozen=True)
 class TraceConfig:
+    """Scenario reference to a trace resource by stable ID and path."""
+
     id: str
     path: str
 
 
 @dataclass(frozen=True)
 class DeviceConfig:
+    """Scenario configuration for one device adapter instance."""
+
     id: str
     driver: str
     application: str = "ReplayTool"
@@ -147,6 +159,8 @@ class DeviceConfig:
 
 @dataclass(frozen=True)
 class ReplaySource:
+    """Logical source slice selected from a trace channel and bus."""
+
     id: str
     trace_id: str
     channel: int
@@ -160,6 +174,8 @@ class ReplaySource:
 
 @dataclass(frozen=True)
 class ReplayTarget:
+    """Physical destination endpoint on a configured device."""
+
     id: str
     device_id: str
     physical_channel: int
@@ -171,6 +187,8 @@ class ReplayTarget:
 
 @dataclass(frozen=True)
 class ReplayRoute:
+    """Mapping from one replay source to one logical channel and target."""
+
     logical_channel: int
     source_id: str
     target_id: str
@@ -181,6 +199,8 @@ class ReplayRoute:
 
 @dataclass(frozen=True)
 class TimelineConfig:
+    """Timeline options and future event groups for replay execution."""
+
     loop: bool = False
     diagnostics: tuple[dict[str, Any], ...] = ()
     link_actions: tuple[dict[str, Any], ...] = ()
@@ -188,6 +208,8 @@ class TimelineConfig:
 
 @dataclass(frozen=True)
 class ReplayScenario:
+    """Validated schema v2 user scenario compiled into a replay plan."""
+
     schema_version: int
     name: str
     traces: tuple[TraceConfig, ...]
@@ -361,6 +383,8 @@ def _validate_ids(label: str, values: list[str]) -> None:
 
 @dataclass(frozen=True)
 class DeviceCapabilities:
+    """Static feature flags reported by a bus device adapter."""
+
     can: bool = False
     canfd: bool = False
     async_send: bool = False
@@ -369,6 +393,8 @@ class DeviceCapabilities:
 
 @dataclass(frozen=True)
 class DeviceInfo:
+    """Descriptor for an opened or discovered device adapter."""
+
     id: str
     driver: str
     name: str
@@ -379,6 +405,8 @@ class DeviceInfo:
 
 @dataclass(frozen=True)
 class DeviceHealth:
+    """Current online status and per-channel health for a device."""
+
     online: bool
     detail: str = ""
     per_channel: dict[int, bool] = field(default_factory=dict)
@@ -386,6 +414,8 @@ class DeviceHealth:
 
 @dataclass(frozen=True)
 class ReplaySnapshot:
+    """Immutable runtime telemetry snapshot returned to callers."""
+
     state: ReplayState = ReplayState.STOPPED
     current_ts_ns: int = 0
     total_ts_ns: int = 0

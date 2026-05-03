@@ -18,6 +18,7 @@ from replay_tool.storage import (
     read_binary_frame_cache,
     write_binary_frame_cache,
 )
+from replay_tool.storage.frame_filters import normalize_source_filters
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -221,13 +222,19 @@ class TraceStoreTests(unittest.TestCase):
         self.assertEqual([1], [frame.channel for frame in filtered])
         self.assertEqual([0x18DAF112], [frame.message_id for frame in filtered])
 
-    def test_empty_source_filters_mean_no_filter_for_all_reader_paths(self) -> None:
+    def test_empty_source_filters_mean_no_filter_at_normalizing_boundaries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             trace_path = self._write_mixed_source_asc(Path(tmp))
             store = SqliteTraceStore(Path(tmp) / "library")
             record = store.import_trace(str(trace_path))
+            normalized_empty = normalize_source_filters([])
 
-            raw_frames = list(ManagedTraceReader().iter(str(trace_path), source_filters=[]))
+            raw_frames = list(
+                ManagedTraceReader().iter(
+                    str(trace_path),
+                    source_filters=normalized_empty,
+                )
+            )
             cache_frames = read_binary_frame_cache(record.cache_path, source_filters=[])
             store_frames = store.load_frames(record.trace_id, source_filters=[])
 
