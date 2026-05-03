@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     import_parser = subparsers.add_parser("import", parents=[workspace_parent], help="Import a trace into the library.")
     import_parser.add_argument("trace")
 
-    traces_parser = subparsers.add_parser("traces", parents=[workspace_parent], help="List imported traces.")
+    subparsers.add_parser("traces", parents=[workspace_parent], help="List imported traces.")
 
     inspect_parser = subparsers.add_parser("inspect", parents=[workspace_parent], help="Inspect an imported trace.")
     inspect_parser.add_argument("trace_id")

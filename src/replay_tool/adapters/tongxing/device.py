@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 from replay_tool.domain import (
     BusType,

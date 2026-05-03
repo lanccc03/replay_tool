@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 import struct
 from typing import BinaryIO
 
 from replay_tool.domain import BusType, Frame
+from replay_tool.storage.frame_filters import normalize_source_filters
 
 
 BINARY_CACHE_FORMAT = "binary-v1"
@@ -199,7 +200,7 @@ def iter_binary_frame_cache(
     Raises:
         ValueError: If the binary cache header or record payload is invalid.
     """
-    normalized_filters = _normalize_source_filters(source_filters)
+    normalized_filters = normalize_source_filters(source_filters)
     start_value = int(start_ns) if start_ns is not None else None
     end_value = int(end_ns) if end_ns is not None else None
     cache_path = Path(path)
@@ -216,7 +217,7 @@ def iter_binary_frame_cache_blocks(
     path: str | Path,
     blocks: Iterable[BinaryFrameIndexEntry],
     *,
-    source_filters: Iterable[tuple[int, BusType]] | None = None,
+    source_filters: set[tuple[int, BusType]] | None = None,
     start_ns: int | None = None,
     end_ns: int | None = None,
 ) -> Iterator[Frame]:
@@ -225,7 +226,8 @@ def iter_binary_frame_cache_blocks(
     Args:
         path: Binary cache path.
         blocks: Index entries to scan.
-        source_filters: Optional `(source_channel, bus)` pairs to include.
+        source_filters: Optional normalized `(source_channel, bus)` pairs to
+            include.
         start_ns: Optional inclusive lower timestamp bound.
         end_ns: Optional exclusive upper timestamp bound.
 
@@ -241,7 +243,6 @@ def iter_binary_frame_cache_blocks(
     )
     if not selected_blocks:
         return
-    normalized_filters = _normalize_source_filters(source_filters)
     start_value = int(start_ns) if start_ns is not None else None
     end_value = int(end_ns) if end_ns is not None else None
     cache_path = Path(path)
@@ -251,7 +252,7 @@ def iter_binary_frame_cache_blocks(
             handle.seek(int(block.file_offset))
             for _index in range(int(block.frame_count)):
                 _offset, frame = _read_record(handle, cache_path)
-                if not _matches_filters(frame, normalized_filters, start_value, end_value):
+                if not _matches_filters(frame, source_filters, start_value, end_value):
                     continue
                 yield frame
 
@@ -425,15 +426,3 @@ def _decode_record(raw_record: bytes, cache_path: Path) -> Frame:
         direction=direction or "Rx",
         source_file=source_file,
     )
-
-
-def _normalize_source_filters(
-    source_filters: Iterable[tuple[int, BusType]] | None,
-) -> set[tuple[int, BusType]] | None:
-    if source_filters is None:
-        return None
-    normalized = {
-        (int(channel), bus if isinstance(bus, BusType) else BusType(bus))
-        for channel, bus in source_filters
-    }
-    return normalized or None

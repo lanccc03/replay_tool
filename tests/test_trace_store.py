@@ -54,6 +54,21 @@ class SpyAscReader(AscTraceReader):
 
 
 class TraceStoreTests(unittest.TestCase):
+    def _write_mixed_source_asc(self, directory: Path) -> Path:
+        trace_path = directory / "mixed.asc"
+        trace_path.write_text(
+            "\n".join(
+                [
+                    "date Thu Apr 30 00:00:00.000 2026",
+                    "base hex timestamps absolute",
+                    "0.000000 CANFD 1 Rx 18DAF111 1 0 1 1 11",
+                    "0.001000 CANFD 2 Rx 18DAF112 1 0 1 1 22",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return trace_path
+
     def test_binary_cache_round_trip_preserves_frame_fields_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cache_path = Path(tmp) / "frames.frames.bin"
@@ -192,6 +207,33 @@ class TraceStoreTests(unittest.TestCase):
         self.assertGreater(index_count, 0)
         self.assertTrue(filtered)
         self.assertTrue(all(frame.channel == 1 for frame in filtered))
+
+    def test_load_frames_generator_source_filters_remain_frame_precise_with_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteTraceStore(Path(tmp) / "library")
+            record = store.import_trace(str(self._write_mixed_source_asc(Path(tmp))))
+
+            filtered = store.load_frames(
+                record.trace_id,
+                source_filters=((channel, bus) for channel, bus in [(1, BusType.CANFD)]),
+            )
+
+        self.assertEqual([1], [frame.channel for frame in filtered])
+        self.assertEqual([0x18DAF112], [frame.message_id for frame in filtered])
+
+    def test_empty_source_filters_mean_no_filter_for_all_reader_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = self._write_mixed_source_asc(Path(tmp))
+            store = SqliteTraceStore(Path(tmp) / "library")
+            record = store.import_trace(str(trace_path))
+
+            raw_frames = list(ManagedTraceReader().iter(str(trace_path), source_filters=[]))
+            cache_frames = read_binary_frame_cache(record.cache_path, source_filters=[])
+            store_frames = store.load_frames(record.trace_id, source_filters=[])
+
+        self.assertEqual([0, 1], [frame.channel for frame in raw_frames])
+        self.assertEqual([0, 1], [frame.channel for frame in cache_frames])
+        self.assertEqual([0, 1], [frame.channel for frame in store_frames])
 
     def test_load_frames_filters_by_source_and_time_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

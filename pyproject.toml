@@ -17,3 +17,8 @@ replay = "replay_tool.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/replay_tool"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]

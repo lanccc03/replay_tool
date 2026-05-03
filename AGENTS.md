@@ -50,6 +50,7 @@
 
 - 详细命令见 `docs/testing.md`。
 - 运行时 / 解析 / 适配器 / Trace Library 改动至少运行：
+  - `uv run ruff check --fix src tests`
   - `python -m compileall src tests`
   - `python -m unittest discover -s tests -v`
 - 同星真机验证需按 `docs/tongxing-hardware-validation.md` 手工记录；未执行时必须在交付说明中明确未验证。

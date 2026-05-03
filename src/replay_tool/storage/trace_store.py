@@ -21,6 +21,7 @@ from replay_tool.storage.binary_cache import (
     iter_binary_frame_cache,
     iter_binary_frame_cache_blocks,
 )
+from replay_tool.storage.frame_filters import normalize_source_filters
 
 
 JSON_CACHE_SUFFIX = ".frames.json"
@@ -77,14 +78,7 @@ class ManagedTraceReader:
             raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
         if trace_path.suffix.lower() != ".asc":
             raise ValueError(f"Unsupported trace format: {trace_path.suffix}")
-        normalized_filters = (
-            {
-                (int(channel), bus if isinstance(bus, BusType) else BusType(bus))
-                for channel, bus in source_filters
-            }
-            if source_filters is not None
-            else None
-        )
+        normalized_filters = normalize_source_filters(source_filters)
         for frame in self.asc_reader.iter(str(trace_path)):
             if normalized_filters is not None and (frame.channel, frame.bus) not in normalized_filters:
                 continue
@@ -359,19 +353,20 @@ class SqliteTraceStore:
             raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
         if not cache_path.exists():
             raise FileNotFoundError(cache_path)
+        normalized_filters = normalize_source_filters(source_filters)
         index_entries = self._ensure_frame_index(record)
         if index_entries:
-            selected_blocks = _select_index_blocks(index_entries, source_filters, start_ns, end_ns)
+            selected_blocks = _select_index_blocks(index_entries, normalized_filters, start_ns, end_ns)
             return iter_binary_frame_cache_blocks(
                 cache_path,
                 selected_blocks,
-                source_filters=source_filters,
+                source_filters=normalized_filters,
                 start_ns=start_ns,
                 end_ns=end_ns,
             )
         return self.trace_reader.iter(
             str(cache_path),
-            source_filters=source_filters,
+            source_filters=normalized_filters,
             start_ns=start_ns,
             end_ns=end_ns,
         )
@@ -710,11 +705,10 @@ def _index_entry_from_row(row) -> BinaryFrameIndexEntry:
 
 def _select_index_blocks(
     entries: Sequence[BinaryFrameIndexEntry],
-    source_filters: Iterable[tuple[int, BusType]] | None,
+    source_filters: set[tuple[int, BusType]] | None,
     start_ns: int | None,
     end_ns: int | None,
 ) -> list[BinaryFrameIndexEntry]:
-    normalized_filters = _normalize_source_filters(source_filters)
     start_value = int(start_ns) if start_ns is not None else None
     end_value = int(end_ns) if end_ns is not None else None
     selected: list[BinaryFrameIndexEntry] = []
@@ -723,22 +717,10 @@ def _select_index_blocks(
             continue
         if end_value is not None and entry.start_ns >= end_value:
             continue
-        if normalized_filters is not None and not any(source in normalized_filters for source in entry.sources):
+        if source_filters is not None and not any(source in source_filters for source in entry.sources):
             continue
         selected.append(entry)
     return selected
-
-
-def _normalize_source_filters(
-    source_filters: Iterable[tuple[int, BusType]] | None,
-) -> set[tuple[int, BusType]] | None:
-    if source_filters is None:
-        return None
-    normalized = {
-        (int(channel), bus if isinstance(bus, BusType) else BusType(bus))
-        for channel, bus in source_filters
-    }
-    return normalized or None
 
 
 def _source_summaries_json(frames: Sequence[Frame]) -> list[dict[str, object]]:
