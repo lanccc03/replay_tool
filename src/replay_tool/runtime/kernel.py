@@ -8,7 +8,6 @@ from typing import Optional
 from replay_tool.domain import ReplaySnapshot, ReplayState
 from replay_tool.planning import ReplayPlan
 from replay_tool.ports.registry import DeviceRegistry
-from replay_tool.ports.trace import TraceReader
 from replay_tool.ports.trace_store import TraceStore
 from replay_tool.runtime.device_session import ReplayDeviceSession
 from replay_tool.runtime.dispatcher import FrameDispatcher
@@ -32,17 +31,15 @@ class ReplayRuntime:
         self,
         registry: DeviceRegistry,
         *,
+        trace_store: TraceStore,
         clock: Clock = time.perf_counter_ns,
         sleeper: Sleeper = time.sleep,
         logger: Callable[[str], None] | None = None,
-        trace_reader: TraceReader | None = None,
-        trace_store: TraceStore | None = None,
     ) -> None:
         self.registry = registry
         self.clock = clock
         self.sleeper = sleeper
         self.logger = logger or (lambda _message: None)
-        self.trace_reader = trace_reader
         self.trace_store = trace_store
         self._plan: Optional[ReplayPlan] = None
         self._thread: Optional[threading.Thread] = None
@@ -62,14 +59,14 @@ class ReplayRuntime:
 
         Raises:
             RuntimeError: If the runtime is not stopped, or if planned frame
-                sources cannot be opened by a trace reader or trace store.
+                sources are not backed by the trace library.
         """
         if self._state != ReplayState.STOPPED:
             raise RuntimeError("Runtime must be stopped before configure().")
         self._plan = plan
         cursor = MergedTimelineCursor(
             plan.frame_sources,
-            PlannedSourceReader(self.trace_reader, self.trace_store),
+            PlannedSourceReader(self.trace_store),
         )
         self._scheduler.configure(plan, cursor)
         self._session.configure(plan)

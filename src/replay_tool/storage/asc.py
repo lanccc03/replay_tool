@@ -11,7 +11,12 @@ ASC_DIRECTIONS = frozenset({"rx", "tx"})
 
 
 class AscTraceReader:
-    """Streaming parser for Vector ASC CAN and CAN FD traces."""
+    """Streaming import parser for Vector ASC CAN and CAN FD traces.
+
+    This parser is used when the Trace Library imports or rebuilds a binary
+    frame cache. Runtime replay consumes the generated `.frames.bin` cache
+    instead of reading ASC text directly.
+    """
 
     def read(self, path: str) -> list[Frame]:
         """Read replay frames from a Vector ASC text trace.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 import time
 import unittest
 
@@ -49,33 +49,23 @@ class RecordingDevice(MockDevice):
         return min(self.accepted_per_send, len(frames))
 
 
-class InMemoryTraceReader:
-    def __init__(self, frames_by_path: dict[str, tuple[Frame, ...]]) -> None:
-        self.frames_by_path = frames_by_path
+class InMemoryTraceStore:
+    """Minimal TraceStore test double that exposes cached frames by trace ID."""
 
-    def read(self, path: str) -> list[Frame]:
-        """Read all frames for compatibility with the TraceReader protocol.
+    def __init__(self, frames_by_trace: dict[str, tuple[Frame, ...]]) -> None:
+        self.frames_by_trace = frames_by_trace
 
-        Args:
-            path: In-memory trace key.
-
-        Returns:
-            Frames matching the key.
-        """
-        return list(self.iter(path))
-
-    def iter(
+    def iter_frames(
         self,
-        path: str,
-        *,
-        source_filters: set[tuple[int, BusType]] | None = None,
+        trace_id: str,
+        source_filters: Iterable[tuple[int, BusType]] | None = None,
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[Frame]:
-        """Iterate in-memory frames with trace reader filters.
+        """Iterate in-memory frames with trace store filters.
 
         Args:
-            path: In-memory trace key.
+            trace_id: In-memory trace key.
             source_filters: Optional source channel and bus filters.
             start_ns: Optional inclusive lower timestamp bound.
             end_ns: Optional exclusive upper timestamp bound.
@@ -83,8 +73,8 @@ class InMemoryTraceReader:
         Yields:
             Matching frames.
         """
-        filters = source_filters or set()
-        for frame in self.frames_by_path[path]:
+        filters = set(source_filters or ())
+        for frame in self.frames_by_trace[trace_id]:
             if filters and (frame.channel, frame.bus) not in filters:
                 continue
             if start_ns is not None and frame.ts_ns < start_ns:
@@ -100,7 +90,8 @@ class RuntimeTests(unittest.TestCase):
         *,
         loop: bool = False,
         ts_ns: int = 0,
-    ) -> tuple[ReplayPlan, list[MockDevice], DeviceRegistry, InMemoryTraceReader]:
+        library_trace_id: str = "trace0",
+    ) -> tuple[ReplayPlan, list[MockDevice], DeviceRegistry, InMemoryTraceStore]:
         devices: list[MockDevice] = []
         config = DeviceConfig(id="mock0", driver="mock")
         channel_config = ChannelConfig(bus=BusType.CANFD)
@@ -122,6 +113,7 @@ class RuntimeTests(unittest.TestCase):
                     source_channel=0,
                     bus=BusType.CANFD,
                     logical_channel=0,
+                    library_trace_id=library_trace_id,
                     frame_count=1,
                     start_ns=ts_ns,
                     end_ns=ts_ns,
@@ -142,12 +134,12 @@ class RuntimeTests(unittest.TestCase):
         )
         registry = DeviceRegistry()
         registry.register("mock", lambda item: devices.append(MockDevice(item)) or devices[-1])
-        return plan, devices, registry, InMemoryTraceReader({"trace0": (frame,)})
+        return plan, devices, registry, InMemoryTraceStore({"trace0": (frame,)})
 
     def test_runtime_sends_frames_and_closes_device(self) -> None:
-        plan, devices, registry, trace_reader = self._make_plan()
+        plan, devices, registry, trace_store = self._make_plan()
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_reader=trace_reader)
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_store=trace_store)
 
         runtime.configure(plan)
         runtime.start()
@@ -159,14 +151,22 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(devices[0].opened)
         self.assertEqual(1, devices[0].sent_frames[0].channel)
 
+    def test_runtime_rejects_sources_without_library_trace_id(self) -> None:
+        plan, _devices, registry, trace_store = self._make_plan(library_trace_id="")
+        clock = ManualClock()
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_store=trace_store)
+
+        with self.assertRaisesRegex(RuntimeError, "cache-backed planned frame sources"):
+            runtime.configure(plan)
+
     def test_pause_resume_rebinds_time_base(self) -> None:
-        plan, _devices, registry, trace_reader = self._make_plan(ts_ns=1_000_000_000)
+        plan, _devices, registry, trace_store = self._make_plan(ts_ns=1_000_000_000)
         clock = ManualClock()
         runtime = ReplayRuntime(
             registry,
             clock=clock,
             sleeper=lambda seconds: time.sleep(0.001),
-            trace_reader=trace_reader,
+            trace_store=trace_store,
         )
 
         runtime.configure(plan)
@@ -181,9 +181,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(1, runtime.snapshot().sent_frames)
 
     def test_loop_restarts_until_stopped(self) -> None:
-        plan, _devices, registry, trace_reader = self._make_plan(loop=True)
+        plan, _devices, registry, trace_store = self._make_plan(loop=True)
         clock = ManualClock()
-        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_reader=trace_reader)
+        runtime = ReplayRuntime(registry, clock=clock, sleeper=clock.advance_sleep, trace_store=trace_store)
 
         runtime.configure(plan)
         runtime.start()
@@ -220,6 +220,7 @@ class RuntimeTests(unittest.TestCase):
                     source_channel=index,
                     bus=BusType.CANFD,
                     logical_channel=index,
+                    library_trace_id="trace0",
                     frame_count=1,
                     start_ns=frames[index].ts_ns,
                     end_ns=frames[index].ts_ns,
@@ -244,7 +245,7 @@ class RuntimeTests(unittest.TestCase):
             registry,
             clock=clock,
             sleeper=clock.advance_sleep,
-            trace_reader=InMemoryTraceReader({"trace0": frames}),
+            trace_store=InMemoryTraceStore({"trace0": frames}),
         )
 
         runtime.configure(plan)
@@ -287,6 +288,7 @@ class RuntimeTests(unittest.TestCase):
                     source_channel=index,
                     bus=BusType.CANFD,
                     logical_channel=index,
+                    library_trace_id="trace0",
                     frame_count=1,
                     start_ns=frames[index].ts_ns,
                     end_ns=frames[index].ts_ns,
@@ -306,7 +308,7 @@ class RuntimeTests(unittest.TestCase):
             registry,
             clock=clock,
             sleeper=clock.advance_sleep,
-            trace_reader=InMemoryTraceReader({"trace0": frames}),
+            trace_store=InMemoryTraceStore({"trace0": frames}),
         )
 
         runtime.configure(plan)

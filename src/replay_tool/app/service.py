@@ -11,7 +11,7 @@ from replay_tool.planning import ReplayPlan, ReplayPlanner
 from replay_tool.ports.registry import DeviceRegistry
 from replay_tool.ports.trace_store import DeleteTraceResult, TraceInspection, TraceRecord, TraceStore
 from replay_tool.runtime import ReplayRuntime
-from replay_tool.storage import BINARY_CACHE_SUFFIX, ManagedTraceReader, SqliteTraceStore
+from replay_tool.storage import BINARY_CACHE_SUFFIX, SqliteTraceStore
 
 
 def build_default_registry() -> DeviceRegistry:
@@ -40,8 +40,7 @@ class ReplayApplication:
         self.registry = registry or build_default_registry()
         self.logger = logger or (lambda _message: None)
         self.workspace = Path(workspace) if workspace is not None else Path(".replay_tool")
-        self.trace_reader = ManagedTraceReader()
-        self.trace_store = trace_store or SqliteTraceStore(self.workspace, self.trace_reader)
+        self.trace_store = trace_store or SqliteTraceStore(self.workspace)
         self.planner = ReplayPlanner()
 
     def load_scenario(self, path: str | Path) -> ReplayScenario:
@@ -100,7 +99,6 @@ class ReplayApplication:
         runtime = ReplayRuntime(
             self.registry,
             logger=self.logger,
-            trace_reader=self.trace_reader,
             trace_store=self.trace_store,
         )
         runtime.configure(plan)

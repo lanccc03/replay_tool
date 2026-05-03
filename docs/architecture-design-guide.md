@@ -176,12 +176,11 @@ runtime/
 当前已有：
 
 - `BusDevice`
-- `TraceReader`
 - `DeviceRegistry`
+- `TraceStore`
 
 后续应增加：
 
-- `TraceStore`
 - `TraceIndex`
 - `DiagnosticClient`
 - `SignalDatabase`
@@ -228,7 +227,7 @@ runtime/
 
 ```text
 storage/
-  asc.py          # ASC 直读
+  asc.py          # ASC 导入解析
   binary_cache.py # 标准化二进制 frame cache
   trace_store.py # SQLite 元数据 + 导入 / 查询 / 重建 / 删除
 ```
@@ -245,7 +244,7 @@ storage/
 - schema v2 也可把 `traces[].path` 写成已导入 trace id，由 app 层解析到 cache。
 - raw ASC 路径会先导入或复用 workspace 中的 `.frames.bin` cache。
 - planner 只把 trace/source/route 编译成 planned frame source，不再把帧列表塞进 `ReplayPlan`。
-- runtime 通过 cache-backed cursor 按 2 ms 窗口流式拉取下一批帧。
+- runtime 通过 TraceStore 读取已导入 `.frames.bin` cache，并按 2 ms 窗口流式拉取下一批帧。
 - Trace Store 已提供 source filter、时间窗口读取和轻量 block index；缺失 index 时可从 cache 重建。
 - 目前仅支持 ASC；BLF 解析仍未实现。
 - 第一版流式导入要求时间戳单调递增；乱序 ASC 的外部归并排序仍未实现。

@@ -1,6 +1,5 @@
 from replay_tool.ports.device import BusDevice
 from replay_tool.ports.registry import DeviceRegistry
-from replay_tool.ports.trace import TraceReader
 from replay_tool.ports.trace_store import (
     DeleteTraceResult,
     TraceInspection,
@@ -16,7 +15,6 @@ __all__ = [
     "DeviceRegistry",
     "TraceInspection",
     "TraceMessageSummary",
-    "TraceReader",
     "TraceRecord",
     "TraceSourceSummary",
     "TraceStore",

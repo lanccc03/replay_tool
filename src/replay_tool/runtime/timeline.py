@@ -5,36 +5,34 @@ from collections.abc import Iterator
 
 from replay_tool.domain import Frame
 from replay_tool.planning import PlannedFrameSource
-from replay_tool.ports.trace import TraceReader
 from replay_tool.ports.trace_store import TraceStore
 
 
 class PlannedSourceReader:
     """Open iterators for planned frame sources through trace ports."""
 
-    def __init__(self, trace_reader: TraceReader | None, trace_store: TraceStore | None = None) -> None:
-        self.trace_reader = trace_reader
+    def __init__(self, trace_store: TraceStore) -> None:
         self.trace_store = trace_store
 
     def iter_source(self, source: PlannedFrameSource) -> Iterator[Frame]:
-        """Iterate raw frames for one planned source.
+        """Iterate cached frames for one planned source.
 
         Args:
-            source: Planned source describing cache path and source filter.
+            source: Planned source describing an imported trace and source filter.
 
         Yields:
-            Frames from the original source channel and bus.
+            Cached frames from the original source channel and bus.
 
         Raises:
-            RuntimeError: If no reader can open the planned source.
+            RuntimeError: If the planned source is not backed by Trace Library.
         """
         filters = {(source.source_channel, source.bus)}
-        if self.trace_store is not None and source.library_trace_id:
-            yield from self.trace_store.iter_frames(source.library_trace_id, source_filters=filters)
-            return
-        if self.trace_reader is None:
-            raise RuntimeError("ReplayRuntime requires a trace reader for planned frame sources.")
-        yield from self.trace_reader.iter(source.path, source_filters=filters)
+        if not source.library_trace_id:
+            raise RuntimeError(
+                "ReplayRuntime requires cache-backed planned frame sources; "
+                f"source {source.source_id!r} has no library_trace_id."
+            )
+        yield from self.trace_store.iter_frames(source.library_trace_id, source_filters=filters)
 
 
 class SourceFrameCursor:
@@ -166,4 +164,3 @@ class MergedTimelineCursor:
     def _push(self, cursor: SourceFrameCursor, ts_ns: int) -> None:
         heapq.heappush(self._heap, (int(ts_ns), self._sequence, cursor))
         self._sequence += 1
-

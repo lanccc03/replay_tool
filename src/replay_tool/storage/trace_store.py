@@ -17,21 +17,31 @@ from replay_tool.storage.binary_cache import (
     BinaryFrameCacheWriter,
     BinaryFrameIndexEntry,
     build_binary_frame_cache_index,
+    iter_binary_frame_cache,
     iter_binary_frame_cache_blocks,
 )
+from replay_tool.storage.asc import AscTraceReader
 from replay_tool.storage.frame_filters import normalize_source_filters
-from replay_tool.storage.managed_reader import JSON_CACHE_SUFFIX, ManagedTraceReader
+
+
+JSON_CACHE_SUFFIX = ".frames.json"
 
 
 class SqliteTraceStore:
-    """SQLite-backed TraceStore with managed trace copies and binary caches."""
+    """SQLite-backed TraceStore with managed ASC imports and binary caches.
 
-    def __init__(self, root: str | Path, trace_reader: ManagedTraceReader | None = None) -> None:
+    The store owns Trace Library metadata, imported source copies, binary frame
+    caches, and cache indexes. Raw ASC parsing is limited to import and cache
+    rebuild paths; frame loading for replay and inspection reads `.frames.bin`
+    caches only.
+    """
+
+    def __init__(self, root: str | Path, asc_reader: AscTraceReader | None = None) -> None:
         self.root = Path(root)
         self.trace_dir = self.root / "traces"
         self.cache_dir = self.root / "cache"
         self.sqlite_path = self.root / "library.sqlite3"
-        self.trace_reader = trace_reader or ManagedTraceReader()
+        self.asc_reader = asc_reader or AscTraceReader()
         self._ensure_dirs()
         self._initialize_schema()
 
@@ -46,7 +56,7 @@ class SqliteTraceStore:
 
         Raises:
             FileNotFoundError: If the source trace does not exist.
-            ValueError: If the trace reader finds no supported frames.
+            ValueError: If the ASC parser finds no supported frames.
         """
         source = Path(source_path)
         if not source.exists():
@@ -287,6 +297,8 @@ class SqliteTraceStore:
         cache_path = Path(record.cache_path)
         if cache_path.name.endswith(JSON_CACHE_SUFFIX):
             raise ValueError("JSON trace caches are unsupported; re-import the trace to create a binary cache.")
+        if not cache_path.name.endswith(BINARY_CACHE_SUFFIX):
+            raise ValueError(f"Trace cache is not a binary frame cache: {cache_path}")
         if not cache_path.exists():
             raise FileNotFoundError(cache_path)
         normalized_filters = normalize_source_filters(source_filters)
@@ -300,8 +312,8 @@ class SqliteTraceStore:
                 start_ns=start_ns,
                 end_ns=end_ns,
             )
-        return self.trace_reader.iter(
-            str(cache_path),
+        return iter_binary_frame_cache(
+            cache_path,
             source_filters=normalized_filters,
             start_ns=start_ns,
             end_ns=end_ns,
@@ -382,7 +394,7 @@ class SqliteTraceStore:
     ) -> tuple["_TraceSummaryBuilder", list[BinaryFrameIndexEntry]]:
         summary = _TraceSummaryBuilder()
         with BinaryFrameCacheWriter(cache_path) as writer:
-            for frame in self.trace_reader.asc_reader.iter(str(library_path)):
+            for frame in self.asc_reader.iter(str(library_path)):
                 writer.write(frame)
                 summary.add(frame)
             if summary.event_count == 0:

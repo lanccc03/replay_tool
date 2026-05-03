@@ -13,12 +13,10 @@ from replay_tool.domain import BusType, Frame
 from replay_tool.storage import (
     AscTraceReader,
     BINARY_CACHE_FORMAT,
-    ManagedTraceReader,
     SqliteTraceStore,
     read_binary_frame_cache,
     write_binary_frame_cache,
 )
-from replay_tool.storage.frame_filters import normalize_source_filters
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,13 +112,20 @@ class TraceStoreTests(unittest.TestCase):
         self.assertEqual(frames, loaded)
         self.assertEqual([frames[0]], filtered)
 
-    def test_managed_reader_rejects_json_frame_cache(self) -> None:
+    def test_load_frames_rejects_json_frame_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            cache_path = Path(tmp) / "legacy.frames.json"
+            store = SqliteTraceStore(Path(tmp) / "library")
+            record = store.import_trace(str(ROOT / "examples" / "sample.asc"))
+            cache_path = Path(record.cache_path).with_name(f"{record.trace_id}.frames.json")
             cache_path.write_text("[]", encoding="utf-8")
+            with sqlite3.connect(store.sqlite_path) as connection:
+                connection.execute(
+                    "UPDATE trace_files SET cache_path = ? WHERE trace_id = ?",
+                    (str(cache_path), record.trace_id),
+                )
 
             with self.assertRaisesRegex(ValueError, "JSON trace caches are unsupported"):
-                ManagedTraceReader().read(str(cache_path))
+                store.load_frames(record.trace_id)
 
     def test_import_persists_cache_and_summaries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,10 +148,8 @@ class TraceStoreTests(unittest.TestCase):
 
     def test_import_and_rebuild_stream_asc_without_reading_full_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            trace_reader = ManagedTraceReader()
             spy_reader = SpyAscReader()
-            trace_reader.asc_reader = spy_reader
-            store = SqliteTraceStore(Path(tmp) / "library", trace_reader)
+            store = SqliteTraceStore(Path(tmp) / "library", asc_reader=spy_reader)
 
             record = store.import_trace(str(ROOT / "examples" / "sample.asc"))
             rebuilt = store.rebuild_cache(record.trace_id)
@@ -227,18 +230,10 @@ class TraceStoreTests(unittest.TestCase):
             trace_path = self._write_mixed_source_asc(Path(tmp))
             store = SqliteTraceStore(Path(tmp) / "library")
             record = store.import_trace(str(trace_path))
-            normalized_empty = normalize_source_filters([])
 
-            raw_frames = list(
-                ManagedTraceReader().iter(
-                    str(trace_path),
-                    source_filters=normalized_empty,
-                )
-            )
             cache_frames = read_binary_frame_cache(record.cache_path, source_filters=[])
             store_frames = store.load_frames(record.trace_id, source_filters=[])
 
-        self.assertEqual([0, 1], [frame.channel for frame in raw_frames])
         self.assertEqual([0, 1], [frame.channel for frame in cache_frames])
         self.assertEqual([0, 1], [frame.channel for frame in store_frames])
 
