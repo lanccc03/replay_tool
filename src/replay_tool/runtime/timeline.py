@@ -43,13 +43,11 @@ class SourceFrameCursor:
         self.reader = reader
         self._iterator: Iterator[Frame] | None = None
         self._lookahead: Frame | None = None
-        self._previous_ts_ns: int | None = None
 
     def open(self) -> None:
         """Open the source iterator and load its first matching frame."""
         self._iterator = self.reader.iter_source(self.source)
         self._lookahead = None
-        self._previous_ts_ns = None
         self._load_next()
 
     def peek_ts_ns(self) -> int | None:
@@ -90,11 +88,6 @@ class SourceFrameCursor:
             self._lookahead = None
             return
         for raw_frame in iterator:
-            if raw_frame.channel != self.source.source_channel or raw_frame.bus != self.source.bus:
-                continue
-            if self._previous_ts_ns is not None and raw_frame.ts_ns < self._previous_ts_ns:
-                raise ValueError("Trace source timestamps are not monotonic; streaming replay requires ordered frames.")
-            self._previous_ts_ns = raw_frame.ts_ns
             self._lookahead = raw_frame.clone(channel=self.source.logical_channel)
             return
         self._lookahead = None

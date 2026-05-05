@@ -212,6 +212,40 @@ class TraceStoreTests(unittest.TestCase):
         self.assertTrue(filtered)
         self.assertTrue(all(frame.channel == 1 for frame in filtered))
 
+    def test_iter_frames_applies_source_filter_and_preserves_order_with_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = Path(tmp) / "indexed_order.asc"
+            lines = [
+                "date Thu Apr 30 00:00:00.000 2026",
+                "base hex timestamps absolute",
+            ]
+            for index in range(5000):
+                channel = index % 4 + 1
+                ts_seconds = index / 1_000_000
+                message_id = 0x300 + channel
+                payload = index % 256
+                lines.append(f"{ts_seconds:.6f} CANFD {channel} Rx {message_id:X} 1 0 1 1 {payload:02X}")
+            trace_path.write_text("\n".join(lines), encoding="utf-8")
+            store = SqliteTraceStore(Path(tmp) / "library")
+
+            record = store.import_trace(str(trace_path))
+            filtered = tuple(store.iter_frames(record.trace_id, source_filters={(3, BusType.CANFD)}))
+
+            connection = sqlite3.connect(store.sqlite_path)
+            try:
+                index_count = connection.execute(
+                    "SELECT COUNT(*) FROM trace_frame_index WHERE trace_id = ?",
+                    (record.trace_id,),
+                ).fetchone()[0]
+            finally:
+                connection.close()
+
+        timestamps = [frame.ts_ns for frame in filtered]
+        self.assertGreater(index_count, 1)
+        self.assertTrue(filtered)
+        self.assertTrue(all((frame.channel, frame.bus) == (3, BusType.CANFD) for frame in filtered))
+        self.assertEqual(timestamps, sorted(timestamps))
+
     def test_load_frames_generator_source_filters_remain_frame_precise_with_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = SqliteTraceStore(Path(tmp) / "library")

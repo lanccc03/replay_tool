@@ -146,7 +146,8 @@ class TraceStore(Protocol):
             end_ns: Optional exclusive upper timestamp bound.
 
         Returns:
-            Cached frames matching the requested filters.
+            Cached frames matching the requested filters in non-decreasing
+            timestamp order.
 
         Raises:
             KeyError: If the trace ID is unknown.
@@ -169,7 +170,8 @@ class TraceStore(Protocol):
             end_ns: Optional exclusive upper timestamp bound.
 
         Yields:
-            Cached frames matching the requested filters.
+            Cached frames matching the requested filters in non-decreasing
+            timestamp order.
 
         Raises:
             KeyError: If the trace ID is unknown.
