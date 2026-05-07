@@ -8,10 +8,11 @@ from replay_tool.adapters.mock import MockDevice
 from replay_tool.adapters.tongxing import TongxingDevice
 from replay_tool.domain import DeviceConfig, ReplayScenario, TraceConfig
 from replay_tool.planning import ReplayPlan, ReplayPlanner
+from replay_tool.ports.project_store import ProjectStore, ScenarioRecord
 from replay_tool.ports.registry import DeviceRegistry
 from replay_tool.ports.trace_store import DeleteTraceResult, TraceInspection, TraceRecord, TraceStore
 from replay_tool.runtime import ReplayRuntime
-from replay_tool.storage import BINARY_CACHE_SUFFIX, SqliteTraceStore
+from replay_tool.storage import BINARY_CACHE_SUFFIX, SqliteProjectStore, SqliteTraceStore
 
 
 def build_default_registry() -> DeviceRegistry:
@@ -36,11 +37,13 @@ class ReplayApplication:
         logger: Callable[[str], None] | None = None,
         workspace: str | Path | None = None,
         trace_store: TraceStore | None = None,
+        project_store: ProjectStore | None = None,
     ) -> None:
         self.registry = registry or build_default_registry()
         self.logger = logger or (lambda _message: None)
         self.workspace = Path(workspace) if workspace is not None else Path(".replay_tool")
         self.trace_store = trace_store or SqliteTraceStore(self.workspace)
+        self.project_store = project_store or SqliteProjectStore(self.workspace)
         self.planner = ReplayPlanner()
 
     def load_scenario(self, path: str | Path) -> ReplayScenario:
@@ -61,41 +64,41 @@ class ReplayApplication:
         payload = json.loads(scenario_path.read_text(encoding="utf-8"))
         return ReplayScenario.from_dict(payload)
 
-    def compile_plan(self, scenario_path: str | Path) -> ReplayPlan:
-        """Compile a scenario file into a replay plan.
+    def compile_plan(self, scenario_ref: str | Path) -> ReplayPlan:
+        """Compile a scenario file or saved scenario ID into a replay plan.
 
         Args:
-            scenario_path: Path to the scenario JSON file.
+            scenario_ref: Path to a scenario JSON file, or a saved scenario ID.
+                Existing filesystem paths take precedence over saved IDs.
 
         Returns:
             A replay plan with imported trace references resolved.
         """
-        path = Path(scenario_path)
-        scenario = self.load_scenario(path)
-        scenario, trace_records = self._prepare_trace_sources(scenario, base_dir=path.parent)
-        return self.planner.compile(scenario, base_dir=path.parent, trace_records=trace_records)
+        scenario, base_dir = self._load_scenario_reference(scenario_ref)
+        scenario, trace_records = self._prepare_trace_sources(scenario, base_dir=base_dir)
+        return self.planner.compile(scenario, base_dir=base_dir, trace_records=trace_records)
 
-    def validate(self, scenario_path: str | Path) -> ReplayPlan:
+    def validate(self, scenario_ref: str | Path) -> ReplayPlan:
         """Validate that a scenario can be compiled.
 
         Args:
-            scenario_path: Path to the scenario JSON file.
+            scenario_ref: Path to a scenario JSON file, or a saved scenario ID.
 
         Returns:
             The compiled plan when validation succeeds.
         """
-        return self.compile_plan(scenario_path)
+        return self.compile_plan(scenario_ref)
 
-    def run(self, scenario_path: str | Path) -> ReplayRuntime:
-        """Compile and run a scenario to completion.
+    def run(self, scenario_ref: str | Path) -> ReplayRuntime:
+        """Compile and run a scenario file or saved scenario ID to completion.
 
         Args:
-            scenario_path: Path to the scenario JSON file.
+            scenario_ref: Path to a scenario JSON file, or a saved scenario ID.
 
         Returns:
             The runtime after execution has stopped.
         """
-        plan = self.compile_plan(scenario_path)
+        plan = self.compile_plan(scenario_ref)
         runtime = ReplayRuntime(
             self.registry,
             logger=self.logger,
@@ -105,6 +108,64 @@ class ReplayApplication:
         runtime.start()
         runtime.wait()
         return runtime
+
+    def save_scenario(self, scenario_path: str | Path, *, scenario_id: str | None = None) -> ScenarioRecord:
+        """Save a schema v2 scenario file into the project store.
+
+        Args:
+            scenario_path: Path to a scenario JSON file.
+            scenario_id: Optional saved scenario ID. When omitted, the store
+                generates a new ID.
+
+        Returns:
+            Saved scenario record.
+        """
+        path = Path(scenario_path)
+        scenario = self.load_scenario(path)
+        return self.project_store.save_scenario(
+            scenario,
+            scenario_id=scenario_id,
+            base_dir=str(path.parent.resolve()),
+        )
+
+    def list_scenarios(self) -> list[ScenarioRecord]:
+        """List saved scenarios from the project store.
+
+        Returns:
+            Saved scenario records.
+        """
+        return self.project_store.list_scenarios()
+
+    def get_scenario(self, scenario_id: str) -> ScenarioRecord:
+        """Return one saved scenario record.
+
+        Args:
+            scenario_id: Saved scenario identifier.
+
+        Returns:
+            Saved scenario record.
+
+        Raises:
+            KeyError: If the scenario ID is unknown.
+        """
+        record = self.project_store.get_scenario(scenario_id)
+        if record is None:
+            raise KeyError(scenario_id)
+        return record
+
+    def delete_scenario(self, scenario_id: str) -> ScenarioRecord:
+        """Delete one saved scenario record.
+
+        Args:
+            scenario_id: Saved scenario identifier.
+
+        Returns:
+            The deleted scenario record.
+
+        Raises:
+            KeyError: If the scenario ID is unknown.
+        """
+        return self.project_store.delete_scenario(scenario_id)
 
     def import_trace(self, path: str | Path) -> TraceRecord:
         """Import a trace file into the trace library.
@@ -181,6 +242,16 @@ class ReplayApplication:
             ValueError: If the registry has no factory for the driver.
         """
         return self.registry.create(config)
+
+    def _load_scenario_reference(self, scenario_ref: str | Path) -> tuple[ReplayScenario, Path]:
+        raw_ref = str(scenario_ref)
+        path = Path(scenario_ref)
+        if path.exists():
+            return self.load_scenario(path), path.parent
+        record = self.project_store.get_scenario(raw_ref)
+        if record is None:
+            raise FileNotFoundError(path)
+        return ReplayScenario.from_dict(record.body), Path(record.base_dir)
 
     def _prepare_trace_sources(
         self,

@@ -118,11 +118,15 @@ class TraceStoreTests(unittest.TestCase):
             record = store.import_trace(str(ROOT / "examples" / "sample.asc"))
             cache_path = Path(record.cache_path).with_name(f"{record.trace_id}.frames.json")
             cache_path.write_text("[]", encoding="utf-8")
-            with sqlite3.connect(store.sqlite_path) as connection:
+            connection = sqlite3.connect(store.sqlite_path)
+            try:
                 connection.execute(
                     "UPDATE trace_files SET cache_path = ? WHERE trace_id = ?",
                     (str(cache_path), record.trace_id),
                 )
+                connection.commit()
+            finally:
+                connection.close()
 
             with self.assertRaisesRegex(ValueError, "JSON trace caches are unsupported"):
                 store.load_frames(record.trace_id)

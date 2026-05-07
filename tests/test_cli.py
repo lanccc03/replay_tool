@@ -114,6 +114,48 @@ class CliTests(unittest.TestCase):
         self.assertEqual(0, empty_list_code, empty_list_err)
         self.assertEqual("No traces.\n", empty_list_out)
 
+    def test_save_list_show_run_and_delete_scenario(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "library"
+            scenario = ROOT / "examples" / "mock_canfd.json"
+
+            save_code, save_out, save_err = self._run_cli(
+                "save-scenario",
+                "--workspace",
+                str(workspace),
+                "--id",
+                "saved-mock",
+                str(scenario),
+            )
+            list_code, list_out, list_err = self._run_cli("scenarios", "--workspace", str(workspace))
+            show_code, show_out, show_err = self._run_cli(
+                "show-scenario",
+                "--workspace",
+                str(workspace),
+                "saved-mock",
+            )
+            run_code, run_out, run_err = self._run_cli("run", "--workspace", str(workspace), "saved-mock")
+            delete_code, delete_out, delete_err = self._run_cli(
+                "delete-scenario",
+                "--workspace",
+                str(workspace),
+                "saved-mock",
+            )
+            empty_code, empty_out, empty_err = self._run_cli("scenarios", "--workspace", str(workspace))
+
+        self.assertEqual(0, save_code, save_err)
+        self.assertIn("SAVED: id=saved-mock name=mock-canfd-demo traces=1 routes=1", save_out)
+        self.assertEqual(0, list_code, list_err)
+        self.assertIn("saved-mock mock-canfd-demo traces=1 routes=1 updated_at=", list_out)
+        self.assertEqual(0, show_code, show_err)
+        self.assertEqual("mock-canfd-demo", json.loads(show_out)["name"])
+        self.assertEqual(0, run_code, run_err)
+        self.assertIn("DONE: state=STOPPED sent=1 skipped=0 errors=0", run_out)
+        self.assertEqual(0, delete_code, delete_err)
+        self.assertIn("DELETED: id=saved-mock name=mock-canfd-demo", delete_out)
+        self.assertEqual(0, empty_code, empty_err)
+        self.assertEqual("No scenarios.\n", empty_out)
+
 
 if __name__ == "__main__":
     unittest.main()

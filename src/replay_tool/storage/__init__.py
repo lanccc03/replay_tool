@@ -10,6 +10,7 @@ from replay_tool.storage.binary_cache import (
     read_binary_frame_cache,
     write_binary_frame_cache,
 )
+from replay_tool.storage.project_store import SqliteProjectStore
 from replay_tool.storage.trace_store import SqliteTraceStore
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "BinaryFrameCacheWriter",
     "BinaryFrameIndexEntry",
     "SqliteTraceStore",
+    "SqliteProjectStore",
     "build_binary_frame_cache_index",
     "iter_binary_frame_cache_blocks",
     "iter_binary_frame_cache",

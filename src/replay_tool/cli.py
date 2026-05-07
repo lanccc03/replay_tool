@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -41,6 +42,30 @@ def main(argv: list[str] | None = None) -> int:
 
     delete_parser = subparsers.add_parser("delete-trace", parents=[workspace_parent], help="Delete an imported trace.")
     delete_parser.add_argument("trace_id")
+
+    save_scenario_parser = subparsers.add_parser(
+        "save-scenario",
+        parents=[workspace_parent],
+        help="Save a schema v2 scenario into the project store.",
+    )
+    save_scenario_parser.add_argument("scenario")
+    save_scenario_parser.add_argument("--id", dest="scenario_id", default=None)
+
+    subparsers.add_parser("scenarios", parents=[workspace_parent], help="List saved scenarios.")
+
+    show_scenario_parser = subparsers.add_parser(
+        "show-scenario",
+        parents=[workspace_parent],
+        help="Show a saved scenario JSON document.",
+    )
+    show_scenario_parser.add_argument("scenario_id")
+
+    delete_scenario_parser = subparsers.add_parser(
+        "delete-scenario",
+        parents=[workspace_parent],
+        help="Delete a saved scenario.",
+    )
+    delete_scenario_parser.add_argument("scenario_id")
 
     devices_parser = subparsers.add_parser("devices", parents=[workspace_parent], help="List device channels.")
     devices_parser.add_argument("--driver", default="tongxing")
@@ -136,6 +161,41 @@ def main(argv: list[str] | None = None) -> int:
                     cache=result.deleted_cache_file,
                 )
             )
+            return 0
+        if args.command == "save-scenario":
+            record = app.save_scenario(args.scenario, scenario_id=args.scenario_id)
+            print(
+                "SAVED: id={id} name={name} traces={traces} routes={routes}".format(
+                    id=record.scenario_id,
+                    name=record.name,
+                    traces=record.trace_count,
+                    routes=record.route_count,
+                )
+            )
+            return 0
+        if args.command == "scenarios":
+            records = app.list_scenarios()
+            if not records:
+                print("No scenarios.")
+                return 0
+            for record in records:
+                print(
+                    "{id} {name} traces={traces} routes={routes} updated_at={updated}".format(
+                        id=record.scenario_id,
+                        name=record.name,
+                        traces=record.trace_count,
+                        routes=record.route_count,
+                        updated=record.updated_at,
+                    )
+                )
+            return 0
+        if args.command == "show-scenario":
+            record = app.get_scenario(args.scenario_id)
+            print(json.dumps(record.body, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if args.command == "delete-scenario":
+            record = app.delete_scenario(args.scenario_id)
+            print(f"DELETED: id={record.scenario_id} name={record.name}")
             return 0
         if args.command == "devices":
             config = DeviceConfig(

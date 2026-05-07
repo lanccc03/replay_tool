@@ -178,13 +178,13 @@ runtime/
 - `BusDevice`
 - `DeviceRegistry`
 - `TraceStore`
+- `ProjectStore`
 
 后续应增加：
 
 - `TraceIndex`
 - `DiagnosticClient`
 - `SignalDatabase`
-- `ProjectStore`
 
 原则是核心层只知道 port，不知道 adapter 的具体类名。
 
@@ -230,6 +230,7 @@ storage/
   asc.py          # ASC 导入解析
   binary_cache.py # 标准化二进制 frame cache
   trace_store.py # SQLite 元数据 + 导入 / 查询 / 重建 / 删除
+  project_store.py # SQLite 场景库，保存 schema v2 scenario JSON
 ```
 
 导入 trace 时：
@@ -268,6 +269,10 @@ storage/
 - `import_trace`
 - `list_traces`
 - `inspect_trace`
+- `save_scenario`
+- `list_scenarios`
+- `get_scenario`
+- `delete_scenario`
 - `create_device`
 
 未来 UI 只应调用 app 层，例如：
@@ -298,6 +303,8 @@ python -m replay_tool.cli run examples/mock_canfd.json
 python -m replay_tool.cli import examples/sample.asc
 python -m replay_tool.cli traces
 python -m replay_tool.cli inspect <trace-id>
+python -m replay_tool.cli save-scenario examples/mock_canfd.json
+python -m replay_tool.cli scenarios
 python -m replay_tool.cli devices --driver tongxing
 ```
 
@@ -619,6 +626,10 @@ replay-tool traces
 replay-tool inspect <trace-id>
 replay-tool rebuild-cache <trace-id>
 replay-tool delete-trace <trace-id>
+replay-tool save-scenario examples/mock_canfd.json
+replay-tool scenarios
+replay-tool show-scenario <scenario-id>
+replay-tool delete-scenario <scenario-id>
 ```
 
 必须补：
@@ -700,13 +711,12 @@ replay-tool delete-trace <trace-id>
 - 同星 adapter。
 - ASC reader。
 - Trace Library v2：流式导入、列出、查看、重建 cache、删除 trace，SQLite 元数据，ASC 二进制 frame cache，source/message summary，source filter / 时间窗口读取，轻量 block index，schema v2 trace id 引用。
+- Project / Scenario Store v1：SQLite 场景库，保存 / 列出 / 查看 / 删除当前 schema v2 scenario JSON，`validate` / `run` 可使用保存的 scenario id。
 - cache-backed 流式回放：`ReplayPlan` 保存 planned frame source，runtime 通过 cursor 按 2 ms batch 读取。
 - fake TSMaster 单测。
 
 尚未具备：
 
-- 历史 schema migration（本轮明确不支持 v1 运行兼容）。
-- 乱序 ASC 的外部排序。
 - DBC / 信号覆盖。
 - CAN UDS / DoIP / DTC。
 - BLF 解析。

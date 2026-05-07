@@ -31,6 +31,10 @@ replay run examples/mock_canfd.json
 replay import examples/sample.asc
 replay traces
 replay inspect <trace-id>
+replay save-scenario examples/mock_canfd.json
+replay scenarios
+replay show-scenario <scenario-id>
+replay run <scenario-id>
 ```
 
 The longer `replay-tool` command is still available as a compatibility alias.
@@ -115,6 +119,25 @@ Delete an imported trace record and its managed library/cache files:
 replay delete-trace [--workspace .replay_tool] <trace-id>
 ```
 
+Save a schema v2 scenario into the workspace Scenario Library:
+
+```powershell
+replay save-scenario [--workspace .replay_tool] [--id <scenario-id>] <scenario.json>
+```
+
+List, show, run, or delete saved scenarios:
+
+```powershell
+replay scenarios [--workspace .replay_tool]
+replay show-scenario [--workspace .replay_tool] <scenario-id>
+replay validate [--workspace .replay_tool] <scenario-id>
+replay run [--workspace .replay_tool] <scenario-id>
+replay delete-scenario [--workspace .replay_tool] <scenario-id>
+```
+
+`validate` and `run` accept either a scenario JSON path or a saved scenario ID.
+If the argument is an existing filesystem path, the path wins.
+
 Trace import streams ASC input into the binary cache and rejects out-of-order
 timestamps. The first streaming implementation does not support external
 sorting for unordered traces.
@@ -142,6 +165,8 @@ python -m replay_tool.cli run examples/mock_canfd.json
 python -m replay_tool.cli import examples/sample.asc
 python -m replay_tool.cli traces
 python -m replay_tool.cli inspect <trace-id>
+python -m replay_tool.cli save-scenario examples/mock_canfd.json
+python -m replay_tool.cli scenarios
 python -m unittest discover -s tests -v
 ```
 

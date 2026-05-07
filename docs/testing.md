@@ -17,6 +17,8 @@ python -m unittest discover -s tests -v
 
 $env:PYTHONPATH=(Join-Path $PWD "src")
 python -m replay_tool.cli validate examples/mock_canfd.json
+python -m replay_tool.cli save-scenario examples/mock_canfd.json
+python -m replay_tool.cli scenarios
 ```
 
 如果 `uv` 可用：
@@ -33,6 +35,7 @@ uv run replay-tool validate examples/mock_canfd.json
 - runtime：`tests/test_runtime.py`
 - CLI 输出和 Trace Library 命令：`tests/test_cli.py`
 - Trace Library 存储：`tests/test_trace_store.py`，覆盖 ASC 流式导入、`.frames.bin` 二进制 cache、轻量 block index、source filter、时间窗口读取、cache rebuild 和 trace delete。
+- Project / Scenario Store：`tests/test_project_store.py`，覆盖 schema v2 场景保存、更新、列出、查看、删除、base_dir 持久化，以及按保存 ID 编译 / 运行。
 - 同星 fake SDK：`tests/test_tongxing_adapter.py`
 
 ## 验证边界
