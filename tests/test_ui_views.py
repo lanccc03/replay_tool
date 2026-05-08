@@ -13,7 +13,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from replay_tool.domain import BusType
+from replay_tool.domain import BusType, ChannelConfig, DeviceConfig
+from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
     DeleteTraceResult,
@@ -79,12 +80,17 @@ class _ScenarioApp:
         records: list[ScenarioRecord] | None = None,
         error: Exception | None = None,
         release: threading.Event | None = None,
+        validation_plan: ReplayPlan | None = None,
+        delete_result: ScenarioRecord | None = None,
     ) -> None:
         self.records = records or []
         self.error = error
         self.release = release
+        self.validation_plan = validation_plan
+        self.delete_result = delete_result
         self.calls = 0
         self.loaded_ids: list[str] = []
+        self.deleted_ids: list[str] = []
 
     def list_scenarios(self) -> list[ScenarioRecord]:
         self.calls += 1
@@ -100,6 +106,38 @@ class _ScenarioApp:
             if record.scenario_id == scenario_id:
                 return record
         raise KeyError(scenario_id)
+
+    def validate_scenario_body(
+        self,
+        body: dict[str, object],
+        *,
+        base_dir: str | Path = ".",
+    ) -> ReplayPlan:
+        return self.validation_plan or _replay_plan(str(body.get("name", "demo-scenario")))
+
+    def save_scenario_body(
+        self,
+        body: dict[str, object],
+        *,
+        scenario_id: str | None = None,
+        base_dir: str | Path = ".",
+    ) -> ScenarioRecord:
+        record = _scenario_record()
+        self.records = [record]
+        return record
+
+    def delete_scenario(self, scenario_id: str) -> ScenarioRecord:
+        self.deleted_ids.append(scenario_id)
+        record = self.delete_result
+        if record is None:
+            for item in self.records:
+                if item.scenario_id == scenario_id:
+                    record = item
+                    break
+        if record is None:
+            raise KeyError(scenario_id)
+        self.records = [item for item in self.records if item.scenario_id != scenario_id]
+        return record
 
 
 def _runner() -> TaskRunner:
@@ -176,6 +214,24 @@ def _scenario_record() -> ScenarioRecord:
         updated_at="2026-05-08T00:00:00",
         trace_count=1,
         route_count=1,
+    )
+
+
+def _replay_plan(name: str = "demo-scenario") -> ReplayPlan:
+    return ReplayPlan(
+        name=name,
+        frame_sources=(),
+        devices=(DeviceConfig(id="mock0", driver="mock"),),
+        channels=(
+            PlannedChannel(
+                logical_channel=0,
+                device_id="mock0",
+                physical_channel=0,
+                config=ChannelConfig(bus=BusType.CANFD),
+            ),
+        ),
+        timeline_size=4,
+        total_ts_ns=800,
     )
 
 
@@ -325,8 +381,9 @@ class ScenariosViewTests(unittest.TestCase):
             view.close()
             self._app.processEvents()
 
-    def test_load_button_follows_scenario_selection_and_edit_actions_stay_disabled(self) -> None:
-        view = ScenariosView(ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner()))
+    def test_command_buttons_follow_scenario_selection_and_loaded_draft(self) -> None:
+        view_model = ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner())
+        view = ScenariosView(view_model)
         try:
             _wait_for(lambda: view.refresh_enabled(), self._app)
             self.assertFalse(view.load_enabled())
@@ -341,7 +398,23 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertFalse(view.save_enabled())
             self.assertFalse(view.validate_enabled())
             self.assertFalse(view.run_enabled())
-            self.assertFalse(view.delete_enabled())
+            self.assertTrue(view.delete_enabled())
+
+            dialog = view.create_delete_confirmation_dialog()
+            try:
+                self.assertIn("Delete Scenario", dialog.text())
+                self.assertIn("demo-scenario", dialog.informativeText())
+                self.assertIn("scenario-1", dialog.informativeText())
+            finally:
+                dialog.close()
+
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+            self.assertTrue(view.save_enabled())
+            self.assertTrue(view.validate_enabled())
+            self.assertFalse(view.run_enabled())
+            self.assertTrue(view.delete_enabled())
         finally:
             view.close()
             self._app.processEvents()
@@ -362,6 +435,49 @@ class ScenariosViewTests(unittest.TestCase):
             _title, body = view.inspector_snapshot()
             self.assertIn("Scenario ID: scenario-1", body)
             self.assertIn("Routes: 1", body)
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_validation_result_is_rendered_in_scenario_inspector(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()], validation_plan=_replay_plan("compiled-demo"))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+            view_model.validate_loaded_scenario()
+            _wait_for(lambda: not view_model.busy and view_model.validation is not None, self._app)
+
+            title, body = view.inspector_snapshot()
+            self.assertEqual("Scenario 校验结果", title)
+            self.assertIn("名称: compiled-demo", body)
+            self.assertIn("Frames: 4", body)
+            self.assertIn("Channels: 1", body)
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_delete_result_is_rendered_in_scenario_inspector(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+            view_model.delete_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.delete_result is not None, self._app)
+
+            title, body = view.inspector_snapshot()
+            self.assertEqual("Scenario 删除结果", title)
+            self.assertIn("Scenario ID: scenario-1", body)
+            self.assertIn("Routes: 1", body)
+            self.assertFalse(view.save_enabled())
+            self.assertFalse(view.validate_enabled())
         finally:
             view.close()
             self._app.processEvents()

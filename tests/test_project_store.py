@@ -145,6 +145,25 @@ class ProjectStoreApplicationTests(unittest.TestCase):
 
         self.assertEqual("file-wins", plan.name)
 
+    def test_application_saves_validates_and_deletes_scenario_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scenario_dir = Path(tmp) / "scenario"
+            scenario_dir.mkdir()
+            shutil.copy2(ROOT / "examples" / "sample.asc", scenario_dir / "sample.asc")
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+            payload = _scenario_payload("body-workflow")
+
+            saved = app.save_scenario_body(payload, scenario_id="body-scenario", base_dir=scenario_dir)
+            loaded = app.get_scenario(saved.scenario_id)
+            plan = app.validate_scenario_body(loaded.body, base_dir=loaded.base_dir)
+            deleted = app.delete_scenario(saved.scenario_id)
+
+        self.assertEqual("body-scenario", saved.scenario_id)
+        self.assertEqual("body-workflow", loaded.name)
+        self.assertEqual("body-workflow", plan.name)
+        self.assertEqual(1, plan.timeline_size)
+        self.assertEqual("body-scenario", deleted.scenario_id)
+
 
 if __name__ == "__main__":
     unittest.main()

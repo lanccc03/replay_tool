@@ -2,7 +2,8 @@
 
 `next_replay` is a new, parallel replay tool project. It does not import or modify the existing `replay_platform` package.
 
-The first version is a CLI-first MVP with a ports-and-adapters architecture:
+The current project is a headless-first replay tool with a PySide6 workbench
+on top of a ports-and-adapters architecture:
 
 - `domain`: stable replay types.
 - `ports`: interfaces for trace readers and bus devices.
@@ -42,20 +43,27 @@ The longer `replay-tool` command is still available as a compatibility alias.
 If `replay` is not found after editing `pyproject.toml`, run `uv sync` again
 or activate the local `.venv`.
 
-### Qt workbench shell
+### Qt workbench
 
-The first PySide6 workbench shell is available through:
+The PySide6 workbench is available through:
 
 ```powershell
 replay-ui [--workspace .replay_tool]
 ```
 
-This first-stage UI provides the shared window structure, default light
-engineering theme, navigation, top status bar, inspector panel, and read-only
-Trace Library / Scenario Store lists backed by the existing application layer.
-Replay Monitor, Devices, and Settings are present as structured placeholders;
-full replay control, hardware enumeration, DBC, diagnostics, DoIP, ZLG, and BLF
-UI workflows are not implemented yet.
+The current UI provides the shared window structure, default light engineering
+theme, navigation, top status bar, inspector panel, async busy/error feedback,
+and workspace-backed pages. Trace Library supports Import ASC, Inspect,
+Rebuild Cache, Delete Trace, and Refresh through the application layer.
+Scenarios can list saved records and load a saved schema v2 scenario into a
+read-only editor preview with Overview, Traces & Devices, Routes, and JSON tabs.
+
+Replay Monitor, Devices, and Settings are still structured placeholders.
+Scenario editing / save / validate / run from the UI, hardware enumeration,
+DBC / Signal Override, diagnostics, DoIP, ZLG, BLF, high DPI checks, and
+Windows hardware UI validation are not implemented or not verified yet. See
+[`docs/ui-implementation-roadmap.md`](docs/ui-implementation-roadmap.md) for
+the current UI milestone status.
 
 ### CLI usage
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -14,12 +15,14 @@ from PySide6.QtWidgets import (
 )
 
 from replay_ui_qt.view_models.scenarios import (
+    ScenarioDeleteResultDetails,
     DraftRouteRow,
     ScenarioDraft,
     ScenarioRow,
+    ScenarioValidationDetails,
     ScenariosViewModel,
 )
-from replay_ui_qt.widgets.dialogs import create_error_details_dialog
+from replay_ui_qt.widgets.dialogs import create_danger_confirmation, create_error_details_dialog
 from replay_ui_qt.widgets.empty_state import EmptyState
 from replay_ui_qt.widgets.status_badge import StatusBadge
 from replay_ui_qt.widgets.table_model import ObjectTableModel, TableColumn
@@ -75,6 +78,8 @@ class ScenariosView(QWidget):
         self._view_model.errorChanged.connect(self._show_error)
         self._view_model.busyChanged.connect(self._sync_busy)
         self._view_model.draftChanged.connect(self._sync_draft)
+        self._view_model.validationChanged.connect(self._sync_validation)
+        self._view_model.deleteResultChanged.connect(self._sync_delete_result)
         self._view_model.refresh()
 
     def inspector_snapshot(self) -> tuple[str, str]:
@@ -83,6 +88,12 @@ class ScenariosView(QWidget):
         Returns:
             Tuple of title and body text.
         """
+        delete_result = self._view_model.delete_result
+        if delete_result is not None and self._view_model.draft is None:
+            return ("Scenario 删除结果", _delete_result_detail(delete_result))
+        validation = self._view_model.validation
+        if validation is not None:
+            return ("Scenario 校验结果", _validation_detail(validation))
         draft = self._view_model.draft
         if draft is not None:
             return ("Scenario Draft", _draft_detail(draft))
@@ -111,7 +122,7 @@ class ScenariosView(QWidget):
         """Return whether Save Scenario is enabled.
 
         Returns:
-            Always False in the read-only M3 first batch.
+            True when a loaded draft can be saved.
         """
         return self._save_button.isEnabled()
 
@@ -119,7 +130,7 @@ class ScenariosView(QWidget):
         """Return whether Validate is enabled.
 
         Returns:
-            Always False in the read-only M3 first batch.
+            True when a loaded draft can be validated.
         """
         return self._validate_button.isEnabled()
 
@@ -135,7 +146,7 @@ class ScenariosView(QWidget):
         """Return whether Delete is enabled.
 
         Returns:
-            Always False in the read-only M3 first batch.
+            True when a selected scenario can be deleted.
         """
         return self._delete_button.isEnabled()
 
@@ -206,6 +217,22 @@ class ScenariosView(QWidget):
             detail=self._view_model.error,
         )
 
+    def create_delete_confirmation_dialog(self):
+        """Create the delete confirmation dialog for the selected scenario.
+
+        Returns:
+            Standard dangerous-action confirmation message box.
+        """
+        row = self._selected_row()
+        object_label = row.name if row is not None else "Scenario"
+        object_id = row.scenario_id if row is not None else ""
+        return create_danger_confirmation(
+            self,
+            action="Delete Scenario",
+            object_label=object_label,
+            object_id=object_id,
+        )
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -225,19 +252,22 @@ class ScenariosView(QWidget):
 
         self._save_button = QPushButton("Save Scenario")
         self._save_button.setEnabled(False)
-        self._save_button.setToolTip("后续接入")
+        self._save_button.setToolTip("保存当前 loaded Scenario draft")
+        self._save_button.clicked.connect(self._save_loaded_scenario)
         toolbar.addWidget(self._save_button)
         self._validate_button = QPushButton("Validate")
         self._validate_button.setEnabled(False)
-        self._validate_button.setToolTip("后续接入")
+        self._validate_button.setToolTip("校验并编译当前 loaded Scenario draft")
+        self._validate_button.clicked.connect(self._validate_loaded_scenario)
         toolbar.addWidget(self._validate_button)
         self._run_button = QPushButton("Run")
         self._run_button.setEnabled(False)
-        self._run_button.setToolTip("后续接入")
+        self._run_button.setToolTip("M4 Replay Monitor 接入后启用")
         toolbar.addWidget(self._run_button)
         self._delete_button = QPushButton("Delete")
         self._delete_button.setEnabled(False)
-        self._delete_button.setToolTip("后续接入")
+        self._delete_button.setToolTip("删除选中 Scenario")
+        self._delete_button.clicked.connect(self._delete_selected_scenario)
         toolbar.addWidget(self._delete_button)
         self._error_button = QPushButton("错误详情")
         self._error_button.setEnabled(False)
@@ -360,9 +390,29 @@ class ScenariosView(QWidget):
             return
         self._view_model.load_scenario(row.scenario_id)
 
+    def _save_loaded_scenario(self) -> None:
+        self._view_model.save_loaded_scenario()
+
+    def _validate_loaded_scenario(self) -> None:
+        self._view_model.validate_loaded_scenario()
+
+    def _delete_selected_scenario(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        dialog = self.create_delete_confirmation_dialog()
+        if dialog.exec() == QMessageBox.StandardButton.Ok:
+            self._view_model.delete_scenario(row.scenario_id)
+
     def _sync_command_buttons(self) -> None:
         row = self._selected_row()
-        self._load_button.setEnabled(row is not None and not self._view_model.busy)
+        has_draft = self._view_model.draft is not None
+        idle = not self._view_model.busy
+        self._load_button.setEnabled(row is not None and idle)
+        self._save_button.setEnabled(has_draft and idle)
+        self._validate_button.setEnabled(has_draft and idle)
+        self._delete_button.setEnabled(row is not None and idle)
+        self._run_button.setEnabled(False)
 
     def _sync_draft(self) -> None:
         draft = self._view_model.draft
@@ -378,6 +428,13 @@ class ScenariosView(QWidget):
             self._device_model.set_rows(draft.devices)
             self._route_model.set_rows(draft.routes)
             self._json_preview.setPlainText(draft.json_text)
+        self._sync_command_buttons()
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _sync_validation(self) -> None:
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _sync_delete_result(self) -> None:
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _emit_selection(self) -> None:
@@ -416,6 +473,29 @@ def _draft_detail(draft: ScenarioDraft) -> str:
             f"Targets: {len(draft.targets)}",
             f"Routes: {len(draft.routes)}",
             f"Base dir: {draft.base_dir}",
+        )
+    )
+
+
+def _validation_detail(validation: ScenarioValidationDetails) -> str:
+    return "\n".join(
+        (
+            f"名称: {validation.name}",
+            f"Frames: {validation.timeline_size}",
+            f"Devices: {validation.device_count}",
+            f"Channels: {validation.channel_count}",
+            f"Total ns: {validation.total_ts_ns}",
+        )
+    )
+
+
+def _delete_result_detail(result: ScenarioDeleteResultDetails) -> str:
+    return "\n".join(
+        (
+            f"名称: {result.name}",
+            f"Scenario ID: {result.scenario_id}",
+            f"Traces: {result.trace_count}",
+            f"Routes: {result.route_count}",
         )
     )
 

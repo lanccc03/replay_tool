@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from replay_tool.adapters.mock import MockDevice
 from replay_tool.adapters.tongxing import TongxingDevice
@@ -89,6 +89,32 @@ class ReplayApplication:
         """
         return self.compile_plan(scenario_ref)
 
+    def validate_scenario_body(
+        self,
+        body: dict[str, Any],
+        *,
+        base_dir: str | Path = ".",
+    ) -> ReplayPlan:
+        """Validate and compile a schema v2 scenario body.
+
+        Args:
+            body: Parsed schema v2 scenario mapping.
+            base_dir: Directory used to resolve relative trace paths.
+
+        Returns:
+            A compiled replay plan with trace references resolved.
+
+        Raises:
+            ValueError: If the scenario body is invalid or references an
+                unsupported trace format.
+            FileNotFoundError: If a referenced trace path or ID cannot be
+                resolved through the workspace.
+        """
+        base_path = Path(base_dir)
+        scenario = ReplayScenario.from_dict(dict(body))
+        scenario, trace_records = self._prepare_trace_sources(scenario, base_dir=base_path)
+        return self.planner.compile(scenario, base_dir=base_path, trace_records=trace_records)
+
     def run(self, scenario_ref: str | Path) -> ReplayRuntime:
         """Compile and run a scenario file or saved scenario ID to completion.
 
@@ -126,6 +152,34 @@ class ReplayApplication:
             scenario,
             scenario_id=scenario_id,
             base_dir=str(path.parent.resolve()),
+        )
+
+    def save_scenario_body(
+        self,
+        body: dict[str, Any],
+        *,
+        scenario_id: str | None = None,
+        base_dir: str | Path = ".",
+    ) -> ScenarioRecord:
+        """Save a schema v2 scenario body into the project store.
+
+        Args:
+            body: Parsed schema v2 scenario mapping.
+            scenario_id: Optional saved scenario ID. When omitted, the store
+                generates a new ID.
+            base_dir: Directory used to resolve relative trace paths.
+
+        Returns:
+            Saved scenario record.
+
+        Raises:
+            ValueError: If the scenario body is invalid.
+        """
+        scenario = ReplayScenario.from_dict(dict(body))
+        return self.project_store.save_scenario(
+            scenario,
+            scenario_id=scenario_id,
+            base_dir=str(Path(base_dir).resolve()),
         )
 
     def list_scenarios(self) -> list[ScenarioRecord]:

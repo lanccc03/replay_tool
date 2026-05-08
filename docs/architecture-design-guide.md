@@ -30,7 +30,9 @@ next_replay/
 ├── uv.lock
 ├── README.md
 ├── docs/
-│   └── architecture-design-guide.md
+│   ├── architecture-design-guide.md
+│   ├── ui-style-guide.md
+│   └── ui-implementation-roadmap.md
 ├── examples/
 ├── tests/
 └── src/
@@ -56,7 +58,7 @@ replay_adapters/    -> replay_tool/adapters/
 replay_storage/     -> replay_tool/storage/
 replay_app/         -> replay_tool/app/
 replay_cli/         -> replay_tool/cli.py
-replay_ui_qt/       -> replay_ui_qt/（PySide6 工作台壳层第一阶段）
+replay_ui_qt/       -> replay_ui_qt/（PySide6 工作台：Trace Library 已闭环，Scenario Editor 只读底座进行中）
 ```
 
 ## 3. 架构类型
@@ -66,7 +68,7 @@ replay_ui_qt/       -> replay_ui_qt/（PySide6 工作台壳层第一阶段）
 核心依赖方向必须保持为：
 
 ```text
-CLI / future Qt UI
+CLI / PySide6 UI
     -> app
         -> planning + runtime + domain
             -> ports
@@ -237,7 +239,7 @@ storage/
 
 - 复制原始文件。
 - 生成标准化 `.frames.bin` 二进制 frame cache。
-- 生成摘要给 CLI 和未来 UI 使用。
+- 生成摘要给 CLI 和 UI 使用。
 
 当前回放时：
 
@@ -257,7 +259,7 @@ storage/
 职责：
 
 - 编排应用用例。
-- 为 CLI 和未来 Qt UI 提供稳定 API。
+- 为 CLI 和 PySide6 UI 提供稳定 API。
 - 不包含 UI 控件逻辑。
 
 当前已有：
@@ -269,13 +271,15 @@ storage/
 - `import_trace`
 - `list_traces`
 - `inspect_trace`
+- `rebuild_trace_cache`
+- `delete_trace`
 - `save_scenario`
 - `list_scenarios`
 - `get_scenario`
 - `delete_scenario`
 - `create_device`
 
-未来 UI 只应调用 app 层，例如：
+UI 只应调用 app 层，例如：
 
 ```python
 app.import_trace(path)
@@ -530,7 +534,7 @@ domain/diagnostics.py
 
 ## 9. UI 设计原则
 
-UI 已具备第一阶段 PySide6 工作台壳层。当前壳层提供导航、顶部状态条、Inspector、默认浅色主题，以及只读 Trace Library / Scenario Store 列表；Replay Monitor、Devices、Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工作台，不是业务中心。
+UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流，以及 saved scenario 的只读 draft preview；Replay Monitor、Devices、Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
 
 当前 / 建议结构：
 
@@ -546,10 +550,14 @@ replay_ui_qt/
     replay_monitor_view.py
     devices_view.py
   view_models/
-    trace_library_vm.py
-    scenarios_vm.py
-    replay_session_vm.py
+    base.py
+    trace_library.py
+    scenarios.py
+    replay_session.py
   widgets/
+    dialogs.py
+    status_badge.py
+    table_model.py
 ```
 
 原则：
@@ -567,9 +575,17 @@ replay_ui_qt/
 
 ```text
 tests/
+  test_cli.py
+  test_project_store.py
   test_scenario_and_planner.py
   test_runtime.py
+  test_trace_store.py
   test_tongxing_adapter.py
+  test_ui_tasks.py
+  test_ui_view_models.py
+  test_ui_views.py
+  test_ui_widgets.py
+  test_ui_smoke.py
 ```
 
 当前验证命令：
@@ -584,8 +600,10 @@ uv 可用后：
 
 ```powershell
 uv sync
+uv run ruff check src tests
 uv run python -m unittest discover -s tests -v
 uv run python -m compileall src tests
+uv run replay-ui --help
 ```
 
 新增能力时的测试要求：
@@ -594,6 +612,7 @@ uv run python -m compileall src tests
 - runtime 时序变更必须使用 fake clock 测试。
 - adapter 变更必须有 fake SDK 测试。
 - trace cache/index 变更必须有 round-trip 测试。
+- UI ViewModel / widget 变更必须有 offscreen 自动化测试或明确记录未覆盖边界。
 - 同星真机能力必须额外写手工验证步骤，但不能用手工验证替代单测。
 
 ## 11. 推荐演进路线
@@ -692,16 +711,18 @@ replay-tool delete-scenario <scenario-id>
 
 目标：
 
-- 在 headless core 稳定后提供完整 PySide6 UI。
+- 继续沿 `docs/ui-implementation-roadmap.md` 推进完整 PySide6 工程工作台。
 
 必须补：
 
-- 第一阶段壳层、主题、导航、Trace / Scenario 只读列表。（已具备第一版）
-- trace library view。
-- scenario editor view。
+- 壳层、主题、导航、异步任务、Trace Library 完整工作流。（已具备）
+- Scenario Editor 只读 draft preview。（已具备第一批）
+- Scenario 可编辑保存、Validate、Run、Delete 闭环。
 - replay monitor view。
+- devices view 的 app 层枚举和配置闭环。
 - signal override view。
 - diagnostics view。
+- 高 DPI、真实窗口点击和 Windows 硬件 UI 验证记录。
 
 ## 12. 交付边界
 
@@ -710,7 +731,7 @@ replay-tool delete-scenario <scenario-id>
 已经具备：
 
 - headless CLI。
-- PySide6 工作台壳层第一版：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、Trace Library / Scenario Store 只读列表、Monitor / Devices / Settings 占位页。
+- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表和 saved scenario 只读 draft preview、Monitor / Devices / Settings 占位页。
 - domain / planning / runtime / ports / adapters / storage / app 分层。
 - Mock 回放。
 - 同星 adapter。
@@ -726,7 +747,7 @@ replay-tool delete-scenario <scenario-id>
 - CAN UDS / DoIP / DTC。
 - BLF 解析。
 - ZLG。
-- 完整 Qt UI：scenario 可视化编辑、运行控制、设备枚举和高 DPI 手工验证仍未完成。
+- PySide6 UI 后续闭环：Scenario 可编辑保存 / Validate / Run / Delete、Replay Monitor 运行控制、Devices 枚举配置、真实窗口点击、高 DPI 手工验证仍未完成。
 - Windows 同星真机验证结论。
 
 后续实现时，请优先保持架构边界清晰。不要为了快速补功能，让 runtime 直接认识硬件 SDK，也不要让 UI 直接操作 adapter。

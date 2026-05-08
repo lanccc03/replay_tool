@@ -1,14 +1,16 @@
 # next_replay UI 实现路线图
 
-本文记录 `next_replay` 从当前 PySide6 工作台壳层走向完整工程 UI 的长期实现路线。它用于指导 UI 进度规划、阶段验收和后续工程代理接手，不替代 `docs/ui-style-guide.md` 的视觉规则，也不替代复杂功能所需的 ExecPlan。
+本文记录 `next_replay` 从当前 PySide6 工程工作台走向完整工程 UI 的长期实现路线。它用于指导 UI 进度规划、阶段验收和后续工程代理接手，不替代 `docs/ui-style-guide.md` 的视觉规则，也不替代复杂功能所需的 ExecPlan。
 
 当前基线：
 
 - 已有 `replay-ui` 启动入口。
 - 已有默认浅色工程主题、左侧导航、顶部状态条、右侧 Inspector 和主工作区壳层。
-- Trace Library 与 Scenarios 页面已能只读列出当前 workspace 中的真实记录。
+- M1 异步任务、busy / error / status badge、危险确认和错误详情底座已接入。
+- Trace Library 已完成 Import ASC、Inspect、Rebuild Cache、Delete Trace 和 Refresh 工作流。
+- Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为只读 draft preview。
 - Replay Monitor、Devices 和 Settings 仍是结构化占位。
-- 完整运行控制、设备枚举、Scenario 可视化编辑、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
+- Scenario 可编辑保存闭环、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
 
 ## 1. 实现原则
 
@@ -39,7 +41,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M0 UI 壳层基线 | `Done` | 可启动工作台壳层，读取 Trace / Scenario 列表 | PySide6、现有 app 层列表 API | `replay-ui` 可启动，offscreen smoke test 和 ViewModel 单测通过 |
 | M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
-| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 只读 draft/editor preview 已启动，保存和 validate 待后续批次 |
+| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 只读 preview 和 Save / Validate / Delete 基础操作已接入，字段编辑与 Run 待后续批次 |
 | M4 Replay Monitor 运行会话闭环 | `Planned` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | Mock scenario 可从 UI 运行到完成 |
 | M5 Devices 设备枚举与配置闭环 | `Planned` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | fake/Mock 自动化通过；同星 UI 真机验证有手工记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
@@ -201,6 +203,21 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - `tests/test_ui_view_models.py`
 - `tests/test_ui_views.py`
 - `tests/test_ui_smoke.py`
+
+第二批已交付：
+
+- `ReplayApplication` 已提供 `validate_scenario_body()` 和 `save_scenario_body()`，供 UI 通过 app 层校验 / 保存当前 schema v2 draft。
+- Scenarios ViewModel 已接入 Validate、Save Scenario 和 Delete，操作继续复用 M1 后台任务、busy / error / status message 模式。
+- Scenarios 页面已启用 loaded draft 的 Save / Validate，以及 selected scenario 的 Delete；Run 仍保持禁用，等待 M4 非阻塞 replay session API。
+- Delete Scenario 使用危险确认对话框，文案包含 scenario name 和 scenario ID。
+- Inspector 可展示 compile plan 摘要和 delete result。
+- 完整字段编辑、保存新 scenario、字段级错误定位和 UI Run 仍未完成。
+
+第二批验收证据：
+
+- `tests/test_project_store.py`
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
 
 验收标准：
 

@@ -46,5 +46,6 @@ uv run replay-tool validate examples/mock_canfd.json
 - 当前 CLI 只接受 `schema_version=2` 场景文件，旧 v1 文件不会运行。
 - `validate` / `run` 会把 raw ASC 场景 trace 导入或复用到 workspace cache，再通过 cursor 流式回放。
 - ASC 流式导入要求时间戳单调递增；乱序 ASC 外部排序未实现。
-- 当前项目只有 PySide6 UI 壳层第一版，完整 Qt 工作台尚未完成；CLI / core 改动通常不需要 Qt 手工点击验证。
-- 当前 MVP 未实现 BLF / DBC / DoIP / ZLG / 完整 Qt UI；相关能力不能在交付说明中写成已验证。
+- 当前 PySide6 UI 已覆盖 Trace Library 的 Import / Inspect / Rebuild / Delete 闭环，以及 saved scenario 的只读 draft preview；CLI / core 改动通常不需要 Qt 手工点击验证。
+- 当前 MVP 未实现 BLF / DBC / DoIP / ZLG / Signal Override / Diagnostics / Scenario 可编辑保存闭环 / Replay Monitor 运行控制 / Devices 真机 UI 工作流；相关能力不能在交付说明中写成已验证。
+- offscreen UI smoke test 不能替代真实窗口点击、高 DPI 或同星真机 UI 验证。

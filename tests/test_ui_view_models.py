@@ -15,7 +15,8 @@ from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
 from replay_tool.app import ReplayApplication
-from replay_tool.domain import BusType
+from replay_tool.domain import BusType, ChannelConfig, DeviceConfig
+from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
     DeleteTraceResult,
@@ -118,13 +119,31 @@ class _ScenarioApp:
         error: Exception | None = None,
         release: threading.Event | None = None,
         load_error: Exception | None = None,
+        validate_error: Exception | None = None,
+        save_error: Exception | None = None,
+        delete_error: Exception | None = None,
+        validation_plan: ReplayPlan | None = None,
+        save_record: ScenarioRecord | None = None,
+        delete_record: ScenarioRecord | None = None,
     ) -> None:
         self.records = records or []
         self.error = error
         self.release = release
         self.load_error = load_error
+        self.validate_error = validate_error
+        self.save_error = save_error
+        self.delete_error = delete_error
+        self.validation_plan = validation_plan
+        self.save_record = save_record
+        self.delete_record = delete_record
         self.calls = 0
         self.loaded_ids: list[str] = []
+        self.validated_bodies: list[dict[str, object]] = []
+        self.validation_base_dirs: list[Path] = []
+        self.saved_bodies: list[dict[str, object]] = []
+        self.saved_ids: list[str | None] = []
+        self.save_base_dirs: list[Path] = []
+        self.deleted_ids: list[str] = []
 
     def list_scenarios(self) -> list[ScenarioRecord]:
         self.calls += 1
@@ -143,6 +162,51 @@ class _ScenarioApp:
                 return record
         raise KeyError(scenario_id)
 
+    def validate_scenario_body(
+        self,
+        body: dict[str, object],
+        *,
+        base_dir: str | Path = ".",
+    ) -> ReplayPlan:
+        self.validated_bodies.append(dict(body))
+        self.validation_base_dirs.append(Path(base_dir))
+        if self.validate_error is not None:
+            raise self.validate_error
+        return self.validation_plan or _replay_plan(str(body.get("name", "demo")))
+
+    def save_scenario_body(
+        self,
+        body: dict[str, object],
+        *,
+        scenario_id: str | None = None,
+        base_dir: str | Path = ".",
+    ) -> ScenarioRecord:
+        self.saved_bodies.append(dict(body))
+        self.saved_ids.append(scenario_id)
+        self.save_base_dirs.append(Path(base_dir))
+        if self.save_error is not None:
+            raise self.save_error
+        record = self.save_record or _scenario_record(dict(body), scenario_id=scenario_id or "scenario-1")
+        self.records = [record if item.scenario_id == record.scenario_id else item for item in self.records]
+        if all(item.scenario_id != record.scenario_id for item in self.records):
+            self.records = [*self.records, record]
+        return record
+
+    def delete_scenario(self, scenario_id: str) -> ScenarioRecord:
+        self.deleted_ids.append(scenario_id)
+        if self.delete_error is not None:
+            raise self.delete_error
+        record = self.delete_record
+        if record is None:
+            for item in self.records:
+                if item.scenario_id == scenario_id:
+                    record = item
+                    break
+        if record is None:
+            raise KeyError(scenario_id)
+        self.records = [item for item in self.records if item.scenario_id != scenario_id]
+        return record
+
 
 def _scenario_body() -> dict[str, object]:
     return {
@@ -157,10 +221,10 @@ def _scenario_body() -> dict[str, object]:
     }
 
 
-def _scenario_record(body: dict[str, object] | None = None) -> ScenarioRecord:
+def _scenario_record(body: dict[str, object] | None = None, *, scenario_id: str = "scenario-1") -> ScenarioRecord:
     payload = body if body is not None else _scenario_body()
     return ScenarioRecord(
-        scenario_id="scenario-1",
+        scenario_id=scenario_id,
         name=str(payload.get("name", "demo")),
         base_dir="C:/data",
         body=payload,
@@ -172,6 +236,24 @@ def _scenario_record(body: dict[str, object] | None = None) -> ScenarioRecord:
 
 def _runner() -> TaskRunner:
     return TaskRunner(QThreadPool())
+
+
+def _replay_plan(name: str = "demo", *, frames: int = 3, total_ns: int = 900) -> ReplayPlan:
+    return ReplayPlan(
+        name=name,
+        frame_sources=(),
+        devices=(DeviceConfig(id="mock0", driver="mock"),),
+        channels=(
+            PlannedChannel(
+                logical_channel=0,
+                device_id="mock0",
+                physical_channel=0,
+                config=ChannelConfig(bus=BusType.CANFD),
+            ),
+        ),
+        timeline_size=frames,
+        total_ts_ns=total_ns,
+    )
 
 
 def _wait_for(predicate, app: QApplication, timeout_ms: int = 3000) -> None:
@@ -688,6 +770,83 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertIn("Scenario body field must be a list", view_model.error)
         self.assertEqual("Scenario 加载失败", view_model.status_message)
 
+    def test_validate_loaded_scenario_maps_plan_summary(self) -> None:
+        plan = _replay_plan("validated", frames=5, total_ns=12345)
+        scenario_app = _ScenarioApp(records=[_scenario_record()], validation_plan=plan)
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.validate_loaded_scenario()
+        _wait_for(lambda: not view_model.busy and view_model.validation is not None, self._app)
+
+        self.assertEqual(1, len(scenario_app.validated_bodies))
+        self.assertEqual(Path("C:/data"), scenario_app.validation_base_dirs[0])
+        self.assertEqual("validated", view_model.validation.name)
+        self.assertEqual(5, view_model.validation.timeline_size)
+        self.assertEqual(1, view_model.validation.device_count)
+        self.assertEqual(1, view_model.validation.channel_count)
+        self.assertEqual(12345, view_model.validation.total_ts_ns)
+        self.assertEqual("Scenario 校验通过: validated", view_model.status_message)
+
+    def test_validate_loaded_scenario_failure_preserves_rows_and_draft(self) -> None:
+        record = _scenario_record()
+        scenario_app = _ScenarioApp(records=[record], validate_error=RuntimeError("trace missing"))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.refresh()
+        _wait_for(lambda: not view_model.busy, self._app)
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.validate_loaded_scenario()
+        _wait_for(lambda: not view_model.busy and bool(view_model.error), self._app)
+
+        self.assertEqual(1, len(view_model.rows))
+        self.assertIsNotNone(view_model.draft)
+        self.assertIsNone(view_model.validation)
+        self.assertEqual("trace missing", view_model.error)
+        self.assertEqual("Scenario 校验失败", view_model.status_message)
+
+    def test_save_loaded_scenario_refreshes_rows_and_updates_draft(self) -> None:
+        saved_body = _scenario_body()
+        saved_body["name"] = "saved-again"
+        saved_record = _scenario_record(saved_body)
+        scenario_app = _ScenarioApp(records=[_scenario_record()], save_record=saved_record)
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.save_loaded_scenario()
+        _wait_for(lambda: not view_model.busy and view_model.status_message == "Scenario 已保存: saved-again", self._app)
+
+        self.assertEqual(["scenario-1"], scenario_app.saved_ids)
+        self.assertEqual(Path("C:/data"), scenario_app.save_base_dirs[0])
+        self.assertEqual(1, scenario_app.calls)
+        self.assertEqual("saved-again", view_model.rows[0].name)
+        self.assertIsNotNone(view_model.draft)
+        self.assertEqual("saved-again", view_model.draft.name)
+        self.assertIsNone(view_model.validation)
+        self.assertIsNone(view_model.delete_result)
+
+    def test_delete_scenario_refreshes_rows_clears_draft_and_records_result(self) -> None:
+        record = _scenario_record()
+        scenario_app = _ScenarioApp(records=[record])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.delete_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.delete_result is not None, self._app)
+
+        self.assertEqual(["scenario-1"], scenario_app.deleted_ids)
+        self.assertEqual(1, scenario_app.calls)
+        self.assertEqual((), view_model.rows)
+        self.assertIsNone(view_model.draft)
+        self.assertIsNone(view_model.validation)
+        self.assertEqual("scenario-1", view_model.delete_result.scenario_id)
+        self.assertEqual("demo", view_model.delete_result.name)
+        self.assertEqual("Scenario 已删除: demo", view_model.status_message)
+
     def test_busy_scenario_view_model_rejects_load_command(self) -> None:
         release = threading.Event()
         scenario_app = _ScenarioApp(records=[_scenario_record()], release=release)
@@ -696,8 +855,14 @@ class ScenariosViewModelTests(unittest.TestCase):
         view_model.refresh()
         _wait_for(lambda: scenario_app.calls == 1 and view_model.busy, self._app)
         view_model.load_scenario("scenario-1")
+        view_model.validate_loaded_scenario()
+        view_model.save_loaded_scenario()
+        view_model.delete_scenario("scenario-1")
 
         self.assertEqual([], scenario_app.loaded_ids)
+        self.assertEqual([], scenario_app.validated_bodies)
+        self.assertEqual([], scenario_app.saved_bodies)
+        self.assertEqual([], scenario_app.deleted_ids)
         self.assertEqual("Scenarios 正在执行任务", view_model.status_message)
 
         release.set()

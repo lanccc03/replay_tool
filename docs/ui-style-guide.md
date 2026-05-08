@@ -1,6 +1,6 @@
 # next_replay UI 风格指导
 
-本文定义 PySide6 UI 的视觉风格、色彩、布局和组件使用规则。当前项目已有第一阶段 `replay_ui_qt` 工作台壳层；本指南继续约束后续页面设计，不表示完整 Qt 工作台已经完成。
+本文定义 PySide6 UI 的视觉风格、色彩、布局和组件使用规则。当前项目已有 `replay_ui_qt` 工作台、Trace Library 完整工作流和 Scenario 只读 draft preview；本指南继续约束后续页面设计，不表示完整 Qt 工作台已经完成。阶段状态以 `docs/ui-implementation-roadmap.md` 为准。
 
 ## 1. 设计定位
 
@@ -15,9 +15,9 @@
 
 第一版 UI 优先服务这些工作流：
 
-- 导入、查看、重建和删除 Trace Library 记录。
-- 编辑 schema v2 scenario 的 trace、device、source、target 和 route。
-- 编译、运行、暂停、恢复、停止回放并查看运行快照。
+- 已完成：导入、查看、重建和删除 Trace Library 记录。
+- 正在推进：以可视化方式查看并后续编辑 schema v2 scenario 的 trace、device、source、target 和 route。
+- 后续闭环：编译、运行、暂停、恢复、停止回放并查看运行快照。
 
 DBC / 信号覆盖、诊断、DoIP、ZLG 和 BLF 等未实现能力不得设计成可用状态。可以预留导航结构，但必须以禁用或未接入状态呈现。
 

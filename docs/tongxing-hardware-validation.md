@@ -213,4 +213,5 @@
 - 多通道发送：CLI 真机四通道发送通过。
 - FIFO 真机读取：未验证；fake TSMaster 自动化测试覆盖四通道 FIFO 读取路径。
 - project_path fallback：本轮直接映射成功，未触发手工 fallback；fake TSMaster 自动化测试覆盖 fallback 逻辑。
-- DBC / DoIP / ZLG / 完整 Qt UI：本轮未实现、未验证。
+- DBC / DoIP / ZLG / Signal Override / Diagnostics：本轮未实现、未验证。
+- Replay Monitor、Devices 真机 UI 点击和高 DPI：本轮未验证；当前 PySide6 UI 的 Trace Library 和 Scenario 只读 preview 不等同于同星真机 UI 验证。
