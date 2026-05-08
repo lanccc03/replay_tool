@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import TraceRecord
+from replay_ui_qt.view_models.base import BaseViewModel
 from replay_ui_qt.view_models.scenarios import ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 
@@ -35,6 +36,27 @@ class _ScenarioApp:
         if self.error is not None:
             raise self.error
         return list(self.records)
+
+
+class BaseViewModelTests(unittest.TestCase):
+    def test_command_lifecycle_sets_busy_status_and_error(self) -> None:
+        view_model = BaseViewModel()
+
+        self.assertTrue(view_model.begin_command("正在执行"))
+        self.assertTrue(view_model.busy)
+        self.assertEqual("", view_model.error)
+        self.assertEqual("正在执行", view_model.status_message)
+        self.assertFalse(view_model.begin_command("重复执行"))
+
+        view_model.complete_command("执行完成")
+        self.assertFalse(view_model.busy)
+        self.assertEqual("执行完成", view_model.status_message)
+
+        self.assertTrue(view_model.begin_command())
+        view_model.fail_command(RuntimeError("boom"), "执行失败")
+        self.assertFalse(view_model.busy)
+        self.assertEqual("boom", view_model.error)
+        self.assertEqual("执行失败", view_model.status_message)
 
 
 class TraceLibraryViewModelTests(unittest.TestCase):

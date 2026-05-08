@@ -4,6 +4,7 @@
 
 - `architecture-design-guide.md`：架构边界、分层职责、数据流和演进路线。
 - `ui-style-guide.md`：PySide6 工作台的界面风格、色彩、布局和组件规则。
+- `ui-implementation-roadmap.md`：PySide6 工作台从壳层到完整 UI 的长期实现路线、阶段验收和维护规则。
 - `testing.md`：本项目的自动化测试、CLI 验证和硬件验证边界。
 - `tongxing-hardware-validation.md`：Windows + TSMaster + TC1014 真机手工验证记录模板。
 
