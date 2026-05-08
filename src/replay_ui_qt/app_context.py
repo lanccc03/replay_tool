@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from replay_tool.app import ReplayApplication
+from replay_ui_qt.tasks import TaskRunner
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class AppContext(QObject):
         super().__init__()
         self.workspace = Path(workspace)
         self.application = application
+        self.task_runner = TaskRunner()
         self._status = UiStatus(
             workspace=str(self.workspace),
             current_page="Trace Library",
@@ -93,4 +95,3 @@ class AppContext(QObject):
             message=self._status.message if message is None else message,
         )
         self.statusChanged.emit(self._status)
-

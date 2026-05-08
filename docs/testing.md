@@ -36,7 +36,7 @@ uv run replay-tool validate examples/mock_canfd.json
 - CLI 输出和 Trace Library 命令：`tests/test_cli.py`
 - Trace Library 存储：`tests/test_trace_store.py`，覆盖 ASC 流式导入、`.frames.bin` 二进制 cache、轻量 block index、source filter、时间窗口读取、cache rebuild 和 trace delete。
 - Project / Scenario Store：`tests/test_project_store.py`，覆盖 schema v2 场景保存、更新、列出、查看、删除、base_dir 持久化，以及按保存 ID 编译 / 运行。
-- PySide6 UI：`tests/test_ui_view_models.py`、`tests/test_ui_smoke.py`、`tests/test_ui_tasks.py` 和 `tests/test_ui_widgets.py`，覆盖 Trace / Scenario ViewModel 映射、命令状态、异步任务框架、基础 widget 和 offscreen 主窗口 smoke test。
+- PySide6 UI：`tests/test_ui_view_models.py`、`tests/test_ui_views.py`、`tests/test_ui_smoke.py`、`tests/test_ui_tasks.py` 和 `tests/test_ui_widgets.py`，覆盖 Trace / Scenario ViewModel 映射、Trace import / inspect / rebuild / delete、Scenario load / draft preview、页面 busy / error 反馈、命令状态、异步任务框架、基础 widget 和 offscreen 主窗口 smoke test。
 - 同星 fake SDK：`tests/test_tongxing_adapter.py`
 
 ## 验证边界

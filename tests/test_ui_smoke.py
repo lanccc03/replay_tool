@@ -8,6 +8,7 @@ import tests.bootstrap  # noqa: F401
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
 from replay_tool.app import ReplayApplication
@@ -30,6 +31,7 @@ class UiSmokeTests(unittest.TestCase):
             try:
                 window.show()
                 self._app.processEvents()
+                _wait_for(lambda: context.task_runner.active_count() == 0, self._app)
 
                 self.assertEqual("next_replay Workbench", window.windowTitle())
                 self.assertEqual(5, window.navigation_count())
@@ -40,6 +42,23 @@ class UiSmokeTests(unittest.TestCase):
             finally:
                 window.close()
                 self._app.processEvents()
+
+
+def _wait_for(predicate, app: QApplication, timeout_ms: int = 3000) -> None:
+    loop = QEventLoop()
+    poller = QTimer()
+    poller.setInterval(10)
+    poller.timeout.connect(lambda: loop.quit() if predicate() else None)
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(loop.quit)
+    poller.start()
+    timeout.start(timeout_ms)
+    loop.exec()
+    poller.stop()
+    app.processEvents()
+    if not predicate():
+        raise AssertionError("Timed out waiting for UI tasks.")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QObject, Signal
+
+from replay_ui_qt.tasks import TaskError, TaskRunner
 
 
 class BaseViewModel(QObject):
@@ -124,6 +128,97 @@ class BaseViewModel(QObject):
         self.set_error(message)
         self.set_status_message(status_message or message)
         self.set_busy(False)
+
+    def run_background_task(
+        self,
+        runner: TaskRunner,
+        task_name: str,
+        function: Callable[[], object],
+        on_success: Callable[[object], None],
+        *,
+        start_status: str = "",
+        success_status: str = "",
+        failure_status: str = "",
+        duplicate_status: str = "",
+    ) -> bool:
+        """Run a blocking command through a TaskRunner.
+
+        Args:
+            runner: Shared background task runner.
+            task_name: Stable task name used for duplicate guarding.
+            function: Blocking callable to execute in a worker thread.
+            on_success: Callback invoked on the Qt thread with the task result.
+            start_status: Optional status text emitted when work starts.
+            success_status: Optional status text emitted after success. Leave
+                empty when `on_success` sets a result-specific status.
+            failure_status: Optional short status text emitted after failure.
+            duplicate_status: Optional status text when the command is already
+                busy or the runner rejects a duplicate task.
+
+        Returns:
+            True when a task was accepted and started; False when duplicate
+            guarding prevented a new task.
+        """
+        if self.busy:
+            if duplicate_status:
+                self.set_status_message(duplicate_status)
+            return False
+        if not self.begin_command(start_status):
+            if duplicate_status:
+                self.set_status_message(duplicate_status)
+            return False
+
+        name = str(task_name)
+        state = {"failed": False, "succeeded": False}
+
+        def cleanup() -> None:
+            for signal, handler in (
+                (runner.taskSucceeded, handle_success),
+                (runner.taskFailed, handle_failed),
+                (runner.taskFinished, handle_finished),
+            ):
+                try:
+                    signal.disconnect(handler)
+                except (RuntimeError, TypeError):
+                    pass
+
+        def handle_success(finished_name: str, result: object) -> None:
+            if finished_name != name:
+                return
+            state["succeeded"] = True
+            try:
+                on_success(result)
+            except Exception as exc:  # pragma: no cover - defensive UI callback handling
+                state["failed"] = True
+                self.fail_command(exc, failure_status)
+
+        def handle_failed(finished_name: str, error: object) -> None:
+            if finished_name != name:
+                return
+            state["failed"] = True
+            message = error.message if isinstance(error, TaskError) else str(error)
+            self.fail_command(message, failure_status)
+
+        def handle_finished(finished_name: str) -> None:
+            if finished_name != name:
+                return
+            if state["succeeded"] and not state["failed"] and self.busy:
+                self.complete_command(success_status)
+            elif self.busy:
+                self.set_busy(False)
+            cleanup()
+
+        runner.taskSucceeded.connect(handle_success)
+        runner.taskFailed.connect(handle_failed)
+        runner.taskFinished.connect(handle_finished)
+        handle = runner.start(name, function)
+        if handle is None:
+            cleanup()
+            self.set_busy(False)
+            if duplicate_status:
+                self.set_status_message(duplicate_status)
+            return False
+        return True
 
     def _set_busy(self, busy: bool) -> None:
         self.set_busy(busy)

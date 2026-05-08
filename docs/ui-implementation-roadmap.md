@@ -37,9 +37,9 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | 阶段 | 状态 | 目标 | 主要依赖 | 验收摘要 |
 | --- | --- | --- | --- | --- |
 | M0 UI 壳层基线 | `Done` | 可启动工作台壳层，读取 Trace / Scenario 列表 | PySide6、现有 app 层列表 API | `replay-ui` 可启动，offscreen smoke test 和 ViewModel 单测通过 |
-| M1 UI 底座加固 | `In Progress` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | 长任务不冻结 UI，busy/error/confirm 模式统一 |
-| M2 Trace Library 完整工作流 | `Planned` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | 不用 CLI 也能完成 Trace Library 常用闭环 |
-| M3 Scenario Editor 可视化编辑闭环 | `Planned` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 不手写 JSON 也能保存并 validate scenario |
+| M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
+| M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
+| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 只读 draft/editor preview 已启动，保存和 validate 待后续批次 |
 | M4 Replay Monitor 运行会话闭环 | `Planned` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | Mock scenario 可从 UI 运行到完成 |
 | M5 Devices 设备枚举与配置闭环 | `Planned` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | fake/Mock 自动化通过；同星 UI 真机验证有手工记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
@@ -76,7 +76,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M1：UI 底座加固
 
-状态：`In Progress`
+状态：`Done`
 
 目标：
 
@@ -99,15 +99,31 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - `StatusBadge`、危险操作确认 helper、可复制错误详情对话框。
 - 对应任务框架、ViewModel 命令状态和 widget smoke 测试。
 
+第二批已交付：
+
+- `AppContext` 持有共享 `TaskRunner`，由主窗口注入 Trace Library / Scenarios ViewModel。
+- `BaseViewModel.run_background_task()` 统一后台任务的开始、成功、失败、完成和重复触发保护。
+- Trace Library / Scenarios 的 `refresh()` 已通过 `TaskRunner` 后台调用 `ReplayApplication.list_traces()` / `list_scenarios()`。
+- Trace Library / Scenarios toolbar 已接入 `StatusBadge`、busy 时禁用刷新、错误详情按钮和可复制错误对话框。
+- 业务按钮仍保持禁用，Import / Inspect / Rebuild / Delete / Save / Validate / Run 不在 M1 中启用。
+
 验收标准：
 
 - 一个模拟长任务执行时，窗口仍能响应事件。
 - ViewModel 单测覆盖成功、失败、重复触发禁用和错误清理。
 - UI smoke test 覆盖至少一个 busy 状态和一个错误状态。
 
+验收证据：
+
+- `tests/test_ui_tasks.py`
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+- `tests/test_ui_widgets.py`
+- `tests/test_ui_smoke.py`
+
 ### M2：Trace Library 完整工作流
 
-状态：`Planned`
+状态：`Done`
 
 目标：
 
@@ -121,6 +137,34 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - Delete Trace 确认对话框与删除结果展示。
 - Cache Ready / Cache Missing / Rebuilding / Unsupported 状态显示。
 
+第一批已交付：
+
+- Trace Library ViewModel 已接入 `ReplayApplication.import_trace()` 和 `inspect_trace()`，并复用 M1 后台任务模式。
+- Import ASC 成功后后台重新读取 Trace Library 列表，列表顺序以 app / store 结果为准。
+- Inspect 可读取 selected Trace 的 source summary 和 message ID summary，并在 Inspector 中显示十六进制 message ID。
+- Refresh / Import / Inspect 在 busy 时统一禁用或拒绝重复触发。
+- Rebuild Cache 和 Delete Trace 仍保持禁用，等待 M2 后续批次接入确认和结果反馈。
+
+第一批验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+- `tests/test_ui_smoke.py`
+
+第二批已交付：
+
+- Rebuild Cache 已接入 `ReplayApplication.rebuild_trace_cache()`，成功后刷新列表并更新 cache 状态。
+- Delete Trace 已接入 `ReplayApplication.delete_trace()`，删除前使用危险操作确认对话框，文案包含 trace name 和 trace ID。
+- Delete 成功后清空 selection / inspection，并在 Inspector 显示 library file / cache file 删除结果。
+- Refresh / Import / Inspect / Rebuild / Delete 在 busy 时统一禁用或拒绝重复触发。
+- BLF、DBC、DoIP、ZLG 和硬件相关能力仍未接入 Trace Library UI。
+
+第二批验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+- `tests/test_ui_smoke.py`
+
 验收标准：
 
 - 用户可通过 UI 导入 `examples/sample.asc` 并看到 trace 列表刷新。
@@ -130,7 +174,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M3：Scenario Editor 可视化编辑闭环
 
-状态：`Planned`
+状态：`In Progress`
 
 目标：
 
@@ -143,6 +187,20 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - source / target 选择使用下拉，不要求用户手输 ID。
 - 支持加载保存的 scenario、保存新 scenario、validate、显示编译结果。
 - JSON 查看、导入和导出作为高级能力，不作为主编辑入口。
+
+第一批已交付：
+
+- Scenarios ViewModel 已接入 `ReplayApplication.get_scenario()`，可将 saved scenario 映射为只读 UI draft。
+- Draft model 已覆盖 traces、devices、sources、targets、routes 和只读 JSON preview。
+- Scenarios 页面提供 `Load Scenario`，加载后显示 Overview、Traces & Devices、Routes、JSON 四个只读 preview tab。
+- Routes preview 使用 `Trace Source -> Logical Channel -> Device Target` 表达映射关系。
+- Save Scenario、Validate、Run、Delete 和字段编辑仍保持禁用，等待后续批次接入。
+
+第一批验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+- `tests/test_ui_smoke.py`
 
 验收标准：
 

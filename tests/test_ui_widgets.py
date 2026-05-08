@@ -27,6 +27,14 @@ class UiWidgetTests(unittest.TestCase):
         self.assertEqual("Cache Missing", badge.text())
         self.assertEqual("missing", badge.semantic)
 
+        badge.set_status("Loading", "running")
+        self.assertEqual("Loading", badge.text())
+        self.assertEqual("running", badge.semantic)
+
+        badge.set_status("Failed", "failed")
+        self.assertEqual("Failed", badge.text())
+        self.assertEqual("failed", badge.semantic)
+
         badge.set_status("Unknown", "not-a-state")
         self.assertEqual("default", badge.semantic)
 

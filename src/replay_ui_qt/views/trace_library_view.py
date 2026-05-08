@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTableView,
@@ -10,8 +12,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel, TraceRow
+from replay_ui_qt.view_models.trace_library import (
+    TraceDeleteResultDetails,
+    TraceInspectionDetails,
+    TraceLibraryViewModel,
+    TraceRow,
+)
+from replay_ui_qt.widgets.dialogs import create_danger_confirmation, create_error_details_dialog
 from replay_ui_qt.widgets.empty_state import EmptyState
+from replay_ui_qt.widgets.status_badge import StatusBadge
 from replay_ui_qt.widgets.table_model import ObjectTableModel, TableColumn
 
 
@@ -42,6 +51,9 @@ class TraceLibraryView(QWidget):
         self._view_model.rowsChanged.connect(self._sync_rows)
         self._view_model.statusMessageChanged.connect(lambda message: self.inspectorChanged.emit("Trace Library", message))
         self._view_model.errorChanged.connect(self._show_error)
+        self._view_model.busyChanged.connect(self._sync_busy)
+        self._view_model.inspectionChanged.connect(self._sync_inspection)
+        self._view_model.deleteResultChanged.connect(self._sync_delete_result)
         self._view_model.refresh()
 
     def inspector_snapshot(self) -> tuple[str, str]:
@@ -52,8 +64,107 @@ class TraceLibraryView(QWidget):
         """
         row = self._selected_row()
         if row is None:
+            delete_result = self._view_model.delete_result
+            if delete_result is not None:
+                return ("Trace 删除结果", _delete_result_detail(delete_result))
             return ("Trace Library", "选择一条 Trace 记录查看 original path、cache path 和 cache 状态。")
-        return ("Trace 详情", _trace_detail(row))
+        return ("Trace 详情", _trace_detail(row, self._inspection_for(row)))
+
+    def refresh_enabled(self) -> bool:
+        """Return whether the refresh button is enabled.
+
+        Returns:
+            True when refresh can be triggered.
+        """
+        return self._refresh_button.isEnabled()
+
+    def import_enabled(self) -> bool:
+        """Return whether the import button is enabled.
+
+        Returns:
+            True when an import can be triggered.
+        """
+        return self._import_button.isEnabled()
+
+    def inspect_enabled(self) -> bool:
+        """Return whether the inspect button is enabled.
+
+        Returns:
+            True when the selected row can be inspected.
+        """
+        return self._inspect_button.isEnabled()
+
+    def rebuild_enabled(self) -> bool:
+        """Return whether the rebuild button is enabled.
+
+        Returns:
+            True when the selected row can rebuild its cache.
+        """
+        return self._rebuild_button.isEnabled()
+
+    def delete_enabled(self) -> bool:
+        """Return whether the delete button is enabled.
+
+        Returns:
+            True when the selected row can be deleted.
+        """
+        return self._delete_button.isEnabled()
+
+    def select_row(self, row: int) -> None:
+        """Select one table row for tests and keyboard-style workflows.
+
+        Args:
+            row: Zero-based table row index.
+        """
+        if 0 <= row < self._model.rowCount():
+            self._table.selectRow(row)
+            self._emit_selection()
+            self._sync_command_buttons()
+
+    def error_details_enabled(self) -> bool:
+        """Return whether the error details button is enabled.
+
+        Returns:
+            True when an error can be opened.
+        """
+        return self._error_button.isEnabled()
+
+    def status_badge_state(self) -> tuple[str, str]:
+        """Return status badge text and semantic key.
+
+        Returns:
+            Tuple of visible text and semantic state.
+        """
+        return self._status_badge.text(), self._status_badge.semantic
+
+    def create_error_dialog(self):
+        """Create the current error details dialog.
+
+        Returns:
+            Error details dialog for the current ViewModel error.
+        """
+        return create_error_details_dialog(
+            self,
+            title="Trace Library 错误",
+            summary="Trace Library 操作失败",
+            detail=self._view_model.error,
+        )
+
+    def create_delete_confirmation_dialog(self):
+        """Create the delete confirmation dialog for the selected trace.
+
+        Returns:
+            Standard dangerous-action confirmation message box.
+        """
+        row = self._selected_row()
+        object_label = row.name if row is not None else "Trace"
+        object_id = row.trace_id if row is not None else ""
+        return create_danger_confirmation(
+            self,
+            action="Delete Trace",
+            object_label=object_label,
+            object_id=object_id,
+        )
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -61,16 +172,40 @@ class TraceLibraryView(QWidget):
         layout.setSpacing(10)
 
         toolbar = QHBoxLayout()
-        refresh = QPushButton("刷新")
-        refresh.setToolTip("重新读取当前 workspace 的 Trace Library")
-        refresh.clicked.connect(self._view_model.refresh)
-        toolbar.addWidget(refresh)
+        self._refresh_button = QPushButton("刷新")
+        self._refresh_button.setToolTip("重新读取当前 workspace 的 Trace Library")
+        self._refresh_button.clicked.connect(self._view_model.refresh)
+        toolbar.addWidget(self._refresh_button)
 
-        for label in ("Import Trace", "Inspect", "Rebuild Cache", "Delete"):
-            button = QPushButton(label)
-            button.setEnabled(False)
-            button.setToolTip("后续接入")
-            toolbar.addWidget(button)
+        self._import_button = QPushButton("Import Trace")
+        self._import_button.setToolTip("导入 ASC Trace")
+        self._import_button.clicked.connect(self._choose_import_trace)
+        toolbar.addWidget(self._import_button)
+
+        self._inspect_button = QPushButton("Inspect")
+        self._inspect_button.setEnabled(False)
+        self._inspect_button.setToolTip("读取选中 Trace 的 source 和 message 摘要")
+        self._inspect_button.clicked.connect(self._inspect_selected_trace)
+        toolbar.addWidget(self._inspect_button)
+
+        self._rebuild_button = QPushButton("Rebuild Cache")
+        self._rebuild_button.setEnabled(False)
+        self._rebuild_button.setToolTip("重建选中 Trace 的二进制 cache")
+        self._rebuild_button.clicked.connect(self._rebuild_selected_trace_cache)
+        toolbar.addWidget(self._rebuild_button)
+
+        self._delete_button = QPushButton("Delete")
+        self._delete_button.setEnabled(False)
+        self._delete_button.setToolTip("删除选中 Trace 和 managed files")
+        self._delete_button.clicked.connect(self._delete_selected_trace)
+        toolbar.addWidget(self._delete_button)
+        self._error_button = QPushButton("错误详情")
+        self._error_button.setEnabled(False)
+        self._error_button.setToolTip("查看可复制的错误详情")
+        self._error_button.clicked.connect(self._show_error_details)
+        toolbar.addWidget(self._error_button)
+        self._status_badge = StatusBadge("Idle", "default")
+        toolbar.addWidget(self._status_badge)
         toolbar.addStretch(1)
         layout.addLayout(toolbar)
 
@@ -87,7 +222,7 @@ class TraceLibraryView(QWidget):
         self._table.setColumnWidth(3, 140)
         self._table.setColumnWidth(4, 140)
         self._table.setColumnWidth(5, 120)
-        self._table.selectionModel().currentRowChanged.connect(lambda _current, _previous: self._emit_selection())
+        self._table.selectionModel().currentRowChanged.connect(lambda _current, _previous: self._handle_selection_changed())
         self._empty = EmptyState("No traces.", "使用 CLI 或后续 UI 导入 ASC 后，这里会显示 Trace Library 记录。")
         self._stack.addWidget(self._table)
         self._stack.addWidget(self._empty)
@@ -96,11 +231,83 @@ class TraceLibraryView(QWidget):
     def _sync_rows(self) -> None:
         self._model.set_rows(self._view_model.rows)
         self._stack.setCurrentWidget(self._empty if not self._view_model.rows else self._table)
+        self._sync_status_badge()
+        self._sync_command_buttons()
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _show_error(self, message: str) -> None:
+        self._error_button.setEnabled(bool(message))
+        self._sync_status_badge()
         if message:
             self.inspectorChanged.emit("Trace Library 错误", message)
+
+    def _sync_busy(self, busy: bool) -> None:
+        self._refresh_button.setEnabled(not busy)
+        self._import_button.setEnabled(not busy)
+        self._sync_command_buttons()
+        self._sync_status_badge()
+
+    def _sync_status_badge(self) -> None:
+        if self._view_model.error:
+            self._status_badge.set_status("Failed", "failed")
+        elif self._view_model.busy:
+            self._status_badge.set_status("Loading", "running")
+        elif self._view_model.rows:
+            self._status_badge.set_status("Ready", "ready")
+        else:
+            self._status_badge.set_status("No records", "disabled")
+
+    def _show_error_details(self) -> None:
+        if not self._view_model.error:
+            return
+        self.create_error_dialog().exec()
+
+    def _choose_import_trace(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "导入 ASC Trace",
+            "",
+            "ASC Trace (*.asc);;All files (*)",
+        )
+        if path:
+            self._view_model.import_trace(path)
+
+    def _inspect_selected_trace(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        self._view_model.inspect_trace(row.trace_id)
+
+    def _sync_command_buttons(self) -> None:
+        row = self._selected_row()
+        enabled = row is not None and not self._view_model.busy
+        self._inspect_button.setEnabled(enabled)
+        self._rebuild_button.setEnabled(enabled)
+        self._delete_button.setEnabled(enabled)
+
+    def _sync_inspection(self) -> None:
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _sync_delete_result(self) -> None:
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _handle_selection_changed(self) -> None:
+        self._sync_command_buttons()
+        self._emit_selection()
+
+    def _rebuild_selected_trace_cache(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        self._view_model.rebuild_trace_cache(row.trace_id)
+
+    def _delete_selected_trace(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        dialog = self.create_delete_confirmation_dialog()
+        if dialog.exec() == QMessageBox.StandardButton.Ok:
+            self._view_model.delete_trace(row.trace_id)
 
     def _emit_selection(self) -> None:
         self.inspectorChanged.emit(*self.inspector_snapshot())
@@ -112,18 +319,64 @@ class TraceLibraryView(QWidget):
         row = self._model.row_at(current.row())
         return row if isinstance(row, TraceRow) else None
 
+    def _inspection_for(self, row: TraceRow) -> TraceInspectionDetails | None:
+        inspection = self._view_model.inspection
+        if inspection is None or inspection.trace_id != row.trace_id:
+            return None
+        return inspection
 
-def _trace_detail(row: TraceRow) -> str:
+
+def _trace_detail(row: TraceRow, inspection: TraceInspectionDetails | None = None) -> str:
+    detail = [
+        f"名称: {row.name}",
+        f"Trace ID: {row.trace_id}",
+        f"Frames: {row.event_count}",
+        f"Start ns: {row.start_ns}",
+        f"End ns: {row.end_ns}",
+        f"Cache: {row.cache_status}",
+        f"Original path: {row.original_path}",
+        f"Cache path: {row.cache_path}",
+    ]
+    if inspection is not None:
+        detail.extend(
+            (
+                f"Library path: {inspection.library_path}",
+                "",
+                "Sources:",
+            )
+        )
+        if inspection.sources:
+            detail.extend(
+                f"  CH{source.source_channel} {source.bus} frames={source.frame_count}"
+                for source in inspection.sources
+            )
+        else:
+            detail.append("  No sources")
+        detail.append("")
+        detail.append("Messages:")
+        if inspection.messages:
+            detail.extend(
+                (
+                    "  CH{channel} {bus} frames={frames} ids={ids}".format(
+                        channel=message.source_channel,
+                        bus=message.bus,
+                        frames=message.frame_count,
+                        ids=", ".join(f"0x{message_id:X}" for message_id in message.message_ids),
+                    )
+                )
+                for message in inspection.messages
+            )
+        else:
+            detail.append("  No messages")
+    return "\n".join(detail)
+
+
+def _delete_result_detail(result: TraceDeleteResultDetails) -> str:
     return "\n".join(
         (
-            f"名称: {row.name}",
-            f"Trace ID: {row.trace_id}",
-            f"Frames: {row.event_count}",
-            f"Start ns: {row.start_ns}",
-            f"End ns: {row.end_ns}",
-            f"Cache: {row.cache_status}",
-            f"Original path: {row.original_path}",
-            f"Cache path: {row.cache_path}",
+            f"名称: {result.name}",
+            f"Trace ID: {result.trace_id}",
+            f"Deleted library file: {result.deleted_library_file}",
+            f"Deleted cache file: {result.deleted_cache_file}",
         )
     )
-

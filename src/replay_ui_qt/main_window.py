@@ -91,9 +91,9 @@ class MainWindow(QMainWindow):
         self._navigation.currentChanged.connect(self._show_page)
 
     def _create_pages(self) -> None:
-        trace_view_model = TraceLibraryViewModel(self._context.application)
+        trace_view_model = TraceLibraryViewModel(self._context.application, self._context.task_runner)
         trace_view_model.statusMessageChanged.connect(self._context.set_status_message)
-        scenario_view_model = ScenariosViewModel(self._context.application)
+        scenario_view_model = ScenariosViewModel(self._context.application, self._context.task_runner)
         scenario_view_model.statusMessageChanged.connect(self._context.set_status_message)
 
         trace_view = TraceLibraryView(trace_view_model)
@@ -109,7 +109,9 @@ class MainWindow(QMainWindow):
             ("Devices", devices_view),
             ("Settings", settings_view),
         ):
-            page.inspectorChanged.connect(self._inspector.set_content)  # type: ignore[attr-defined]
+            page.inspectorChanged.connect(  # type: ignore[attr-defined]
+                lambda title, body, source=page: self._handle_inspector_changed(source, title, body)
+            )
             self._pages.append((label, page))
             self._stack.addWidget(page)
             self._navigation.add_page(label)
@@ -122,4 +124,8 @@ class MainWindow(QMainWindow):
         page = self._pages[index][1]
         if hasattr(page, "inspector_snapshot"):
             title, body = page.inspector_snapshot()  # type: ignore[attr-defined]
+            self._inspector.set_content(title, body)
+
+    def _handle_inspector_changed(self, page: QWidget, title: str, body: str) -> None:
+        if self._stack.currentWidget() is page:
             self._inspector.set_content(title, body)
