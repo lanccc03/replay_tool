@@ -36,6 +36,7 @@ uv run replay-tool validate examples/mock_canfd.json
 - CLI 输出和 Trace Library 命令：`tests/test_cli.py`
 - Trace Library 存储：`tests/test_trace_store.py`，覆盖 ASC 流式导入、`.frames.bin` 二进制 cache、轻量 block index、source filter、时间窗口读取、cache rebuild 和 trace delete。
 - Project / Scenario Store：`tests/test_project_store.py`，覆盖 schema v2 场景保存、更新、列出、查看、删除、base_dir 持久化，以及按保存 ID 编译 / 运行。
+- PySide6 UI 壳层：`tests/test_ui_view_models.py` 和 `tests/test_ui_smoke.py`，覆盖 Trace / Scenario ViewModel 映射、错误状态和 offscreen 主窗口 smoke test。
 - 同星 fake SDK：`tests/test_tongxing_adapter.py`
 
 ## 验证边界
@@ -45,5 +46,5 @@ uv run replay-tool validate examples/mock_canfd.json
 - 当前 CLI 只接受 `schema_version=2` 场景文件，旧 v1 文件不会运行。
 - `validate` / `run` 会把 raw ASC 场景 trace 导入或复用到 workspace cache，再通过 cursor 流式回放。
 - ASC 流式导入要求时间戳单调递增；乱序 ASC 外部排序未实现。
-- 当前项目没有 Qt UI，迁移或 CLI 改动不需要 Qt 手工点击验证。
-- 当前 MVP 未实现 BLF / DBC / DoIP / ZLG / Qt UI；相关能力不能在交付说明中写成已验证。
+- 当前项目只有 PySide6 UI 壳层第一版，完整 Qt 工作台尚未完成；CLI / core 改动通常不需要 Qt 手工点击验证。
+- 当前 MVP 未实现 BLF / DBC / DoIP / ZLG / 完整 Qt UI；相关能力不能在交付说明中写成已验证。

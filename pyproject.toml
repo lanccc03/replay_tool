@@ -9,17 +9,20 @@ description = "Hexagonal CAN/CANFD replay tool with Tongxing/TSMaster-first supp
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+    "PySide6>=6.7,<7",
+]
 
 [project.scripts]
 replay-tool = "replay_tool.cli:main"
 replay = "replay_tool.cli:main"
+replay-ui = "replay_ui_qt.main:main"
 
 [tool.ruff]
 line-length = 120
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/replay_tool"]
+packages = ["src/replay_tool", "src/replay_ui_qt"]
 
 [dependency-groups]
 dev = [

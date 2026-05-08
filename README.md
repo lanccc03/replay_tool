@@ -35,11 +35,27 @@ replay save-scenario examples/mock_canfd.json
 replay scenarios
 replay show-scenario <scenario-id>
 replay run <scenario-id>
+replay-ui --workspace .replay_tool
 ```
 
 The longer `replay-tool` command is still available as a compatibility alias.
 If `replay` is not found after editing `pyproject.toml`, run `uv sync` again
 or activate the local `.venv`.
+
+### Qt workbench shell
+
+The first PySide6 workbench shell is available through:
+
+```powershell
+replay-ui [--workspace .replay_tool]
+```
+
+This first-stage UI provides the shared window structure, default light
+engineering theme, navigation, top status bar, inspector panel, and read-only
+Trace Library / Scenario Store lists backed by the existing application layer.
+Replay Monitor, Devices, and Settings are present as structured placeholders;
+full replay control, hardware enumeration, DBC, diagnostics, DoIP, ZLG, and BLF
+UI workflows are not implemented yet.
 
 ### CLI usage
 
