@@ -8,9 +8,9 @@
 - 已有默认浅色工程主题、左侧导航、顶部状态条、右侧 Inspector 和主工作区壳层。
 - M1 异步任务、busy / error / status badge、危险确认和错误详情底座已接入。
 - Trace Library 已完成 Import ASC、Inspect、Rebuild Cache、Delete Trace 和 Refresh 工作流。
-- Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为只读 draft preview。
+- Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为可编辑 draft，支持新建最小 draft、多 route 编辑、保存、校验和删除。
 - Replay Monitor、Devices 和 Settings 仍是结构化占位。
-- Scenario 可编辑保存闭环、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
+- Scenario Editor 的真实设备 target 选择、完整字段就近错误提示、UI Run、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
 
 ## 1. 实现原则
 
@@ -41,7 +41,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M0 UI 壳层基线 | `Done` | 可启动工作台壳层，读取 Trace / Scenario 列表 | PySide6、现有 app 层列表 API | `replay-ui` 可启动，offscreen smoke test 和 ViewModel 单测通过 |
 | M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
-| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 只读 preview 和 Save / Validate / Delete 基础操作已接入，字段编辑与 Run 待后续批次 |
+| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 多 route draft 编辑、保存、Validate 已接入；Run 待 M4 |
 | M4 Replay Monitor 运行会话闭环 | `Planned` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | Mock scenario 可从 UI 运行到完成 |
 | M5 Devices 设备枚举与配置闭环 | `Planned` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | fake/Mock 自动化通过；同星 UI 真机验证有手工记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
@@ -216,6 +216,33 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 第二批验收证据：
 
 - `tests/test_project_store.py`
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+
+第三批已交付：
+
+- Scenarios ViewModel 已接入 `ReplayApplication.list_traces()` / `inspect_trace()`，可从已导入 trace 创建单 trace / 单 source / 单 mock target / 单 route 的最小 schema v2 draft。
+- `ScenarioDraft` 已增加 `is_new` 和 `dirty` 状态；name、timeline loop、route logical channel 和 target physical channel 的编辑会重建 draft body 并刷新只读 JSON preview。
+- Scenarios 页面已提供 `New Scenario`，并在 Overview / Routes tab 暴露第一批可编辑字段；新建 draft 保存时创建新 Scenario Store 记录，已保存 draft 继续更新原 ID。
+- Run 仍保持禁用，等待 M4 非阻塞 replay session API。
+- 多 trace / 多 route 管理、source / target 下拉批量编辑和字段级错误定位仍未完成。
+
+第三批验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+
+第四批已交付：
+
+- Scenarios ViewModel 已增加 route 增删、route source / target 改绑和本地 `ScenarioDraftIssue` 字段级 issue 映射。
+- 添加 route 时复用当前 draft 中已有 trace/source/target；缺失时创建 imported trace source 和 mock target，ID 碰撞使用稳定后缀。
+- Routes tab 已支持选中 route 后编辑 source、logical channel、target 和 selected target physical channel，并提供 `Add Route` / `Remove Route`。
+- Inspector 可显示 draft issue 列表，包含 section、row、field 和 message；本批不做表格单元格高亮。
+- Run 仍保持禁用，等待 M4 非阻塞 replay session API。
+- 真实设备 target 选择、多设备配置、完整字段级就近错误提示和 UI Run 仍未完成。
+
+第四批验收证据：
+
 - `tests/test_ui_view_models.py`
 - `tests/test_ui_views.py`
 

@@ -24,7 +24,7 @@ from replay_tool.ports.trace_store import (
     TraceSourceSummary,
 )
 from replay_ui_qt.tasks import TaskRunner
-from replay_ui_qt.view_models.scenarios import ScenariosViewModel
+from replay_ui_qt.view_models.scenarios import ScenarioSourceChoice, ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 from replay_ui_qt.views.scenarios_view import ScenariosView
 from replay_ui_qt.views.trace_library_view import TraceLibraryView
@@ -82,13 +82,18 @@ class _ScenarioApp:
         release: threading.Event | None = None,
         validation_plan: ReplayPlan | None = None,
         delete_result: ScenarioRecord | None = None,
+        trace_records: list[TraceRecord] | None = None,
+        trace_inspection: TraceInspection | None = None,
     ) -> None:
         self.records = records or []
         self.error = error
         self.release = release
         self.validation_plan = validation_plan
         self.delete_result = delete_result
+        self.trace_records = trace_records or []
+        self.trace_inspection = trace_inspection
         self.calls = 0
+        self.trace_calls = 0
         self.loaded_ids: list[str] = []
         self.deleted_ids: list[str] = []
 
@@ -106,6 +111,15 @@ class _ScenarioApp:
             if record.scenario_id == scenario_id:
                 return record
         raise KeyError(scenario_id)
+
+    def list_traces(self) -> list[TraceRecord]:
+        self.trace_calls += 1
+        return list(self.trace_records)
+
+    def inspect_trace(self, trace_id: str) -> TraceInspection:
+        if self.trace_inspection is None:
+            raise KeyError(trace_id)
+        return self.trace_inspection
 
     def validate_scenario_body(
         self,
@@ -367,14 +381,18 @@ class ScenariosViewTests(unittest.TestCase):
         try:
             _wait_for(
                 lambda: scenario_app.calls == 1
+                and not view.new_enabled()
                 and not view.refresh_enabled()
                 and not view.load_enabled()
+                and not view.add_route_enabled()
+                and not view.remove_route_enabled()
                 and view.status_badge_state() == ("Loading", "running"),
                 self._app,
             )
 
             release.set()
             _wait_for(lambda: view.refresh_enabled(), self._app)
+            self.assertTrue(view.new_enabled())
             self.assertEqual(("No records", "disabled"), view.status_badge_state())
         finally:
             release.set()
@@ -391,6 +409,7 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertFalse(view.validate_enabled())
             self.assertFalse(view.run_enabled())
             self.assertFalse(view.delete_enabled())
+            self.assertTrue(view.new_enabled())
 
             view.select_row(0)
 
@@ -415,6 +434,90 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertTrue(view.validate_enabled())
             self.assertFalse(view.run_enabled())
             self.assertTrue(view.delete_enabled())
+            self.assertTrue(view.add_route_enabled())
+            self.assertTrue(view.remove_route_enabled())
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_new_scenario_dialog_exposes_trace_and_source_choices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = _trace_record(tmp)
+            scenario_app = _ScenarioApp(
+                trace_records=[trace],
+                trace_inspection=_inspection(trace),
+            )
+            view_model = ScenariosViewModel(scenario_app, _runner())
+            view = ScenariosView(view_model)
+            try:
+                _wait_for(lambda: not view_model.busy, self._app)
+                view_model.load_trace_choices()
+                _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
+                dialog = view.create_new_dialog()
+                try:
+                    self.assertTrue(dialog.has_create_action())
+                    self.assertIn("sample.asc", dialog.body_text())
+                    self.assertIn("CH0 CANFD", dialog.body_text())
+                finally:
+                    dialog.close()
+            finally:
+                view.close()
+                self._app.processEvents()
+
+    def test_new_scenario_dialog_reports_no_traces(self) -> None:
+        view_model = ScenariosViewModel(_ScenarioApp(trace_records=[]), _runner())
+        view = ScenariosView(view_model)
+        try:
+            dialog = view.create_new_dialog()
+            try:
+                self.assertFalse(dialog.has_create_action())
+                self.assertIn("No imported traces", dialog.body_text())
+            finally:
+                dialog.close()
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_add_route_dialog_exposes_trace_source_and_channel_choices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = _trace_record(tmp)
+            scenario_app = _ScenarioApp(
+                trace_records=[trace],
+                trace_inspection=_inspection(trace),
+            )
+            view_model = ScenariosViewModel(scenario_app, _runner())
+            view = ScenariosView(view_model)
+            try:
+                _wait_for(lambda: not view_model.busy, self._app)
+                view_model.load_trace_choices()
+                _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
+                source = view_model.source_choices_for_trace(trace.trace_id)[0]
+                view_model.create_new_scenario_from_trace(view_model.trace_choices[0], source)
+
+                dialog = view.create_add_route_dialog()
+                try:
+                    self.assertTrue(dialog.has_add_action())
+                    self.assertIn("Add Route", dialog.body_text())
+                    self.assertIn("sample.asc", dialog.body_text())
+                    self.assertIn("CH0 CANFD", dialog.body_text())
+                    self.assertIn("Logical Channel: 1", dialog.body_text())
+                    self.assertIn("Physical Channel: 1", dialog.body_text())
+                finally:
+                    dialog.close()
+            finally:
+                view.close()
+                self._app.processEvents()
+
+    def test_add_route_dialog_reports_no_traces(self) -> None:
+        view_model = ScenariosViewModel(_ScenarioApp(trace_records=[]), _runner())
+        view = ScenariosView(view_model)
+        try:
+            dialog = view.create_add_route_dialog()
+            try:
+                self.assertFalse(dialog.has_add_action())
+                self.assertIn("No imported traces", dialog.body_text())
+            finally:
+                dialog.close()
         finally:
             view.close()
             self._app.processEvents()
@@ -430,11 +533,102 @@ class ScenariosViewTests(unittest.TestCase):
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
 
             self.assertIn("demo-scenario", view.overview_text())
+            self.assertEqual("demo-scenario", view.overview_name_text())
+            self.assertFalse(view.overview_loop_checked())
             self.assertIn("trace1 / CH0 CANFD -> 0 -> mock0 / CH0 CANFD", view.routes_preview_text())
             self.assertIn('"schema_version": 2', view.json_preview_text())
             _title, body = view.inspector_snapshot()
             self.assertIn("Scenario ID: scenario-1", body)
             self.assertIn("Routes: 1", body)
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_overview_and_route_edits_update_preview_and_json(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+            view.edit_overview_name("edited-scenario")
+            view.edit_overview_loop(True)
+            view.edit_route_logical_channel(4)
+            view.edit_target_physical_channel(2)
+
+            self.assertIn("edited-scenario", view.overview_text())
+            self.assertEqual("edited-scenario", view.overview_name_text())
+            self.assertTrue(view.overview_loop_checked())
+            self.assertIn("trace1 / CH0 CANFD -> 4 -> mock0 / CH2 CANFD", view.routes_preview_text())
+            self.assertIn('"name": "edited-scenario"', view.json_preview_text())
+            self.assertIn('"loop": true', view.json_preview_text())
+            self.assertFalse(view.run_enabled())
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_route_source_target_edits_update_selected_route_preview_and_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = _trace_record(tmp, trace_id="trace1")
+            scenario_app = _ScenarioApp(
+                records=[_scenario_record()],
+                trace_records=[trace],
+                trace_inspection=_inspection(trace),
+            )
+            view_model = ScenariosViewModel(scenario_app, _runner())
+            view = ScenariosView(view_model)
+            try:
+                _wait_for(lambda: view.refresh_enabled(), self._app)
+                view.select_row(0)
+                view_model.load_scenario("scenario-1")
+                _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+                view_model.load_trace_choices()
+                _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
+                source = view_model.source_choices_for_trace(trace.trace_id)[0]
+                view_model.add_route_from_trace(
+                    view_model.trace_choices[0],
+                    source,
+                    logical_channel=1,
+                    physical_channel=1,
+                )
+
+                view.select_route(0)
+                view.edit_route_target("mock0-ch1-canfd")
+                view.edit_route_logical_channel(5)
+                view.edit_route_source("source0")
+
+                self.assertIn("trace1 / CH0 CANFD -> 5 -> mock0 / CH1 CANFD", view.routes_preview_text())
+                self.assertIn('"target": "mock0-ch1-canfd"', view.json_preview_text())
+                self.assertIn('"logical_channel": 5', view.json_preview_text())
+                self.assertTrue(view.remove_route_enabled())
+                self.assertFalse(view.run_enabled())
+            finally:
+                view.close()
+                self._app.processEvents()
+
+    def test_draft_issues_are_rendered_in_scenario_inspector(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+            view_model.add_route_from_trace(
+                ScenarioTraceChoice("trace1", "sample.asc", 1),
+                ScenarioSourceChoice("trace1", 0, "CANFD", 1),
+                logical_channel=0,
+                physical_channel=1,
+            )
+
+            title, body = view.inspector_snapshot()
+            self.assertEqual("Scenario Draft Issues", title)
+            self.assertIn("routes[1].logical_channel", body)
+            self.assertIn("Logical channel 0", body)
         finally:
             view.close()
             self._app.processEvents()

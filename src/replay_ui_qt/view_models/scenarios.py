@@ -9,6 +9,7 @@ from PySide6.QtCore import Signal
 
 from replay_tool.planning import ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
+from replay_tool.ports.trace_store import TraceInspection, TraceRecord
 from replay_ui_qt.tasks import TaskRunner
 from replay_ui_qt.view_models.base import BaseViewModel
 
@@ -21,6 +22,25 @@ class ScenarioListApplication(Protocol):
 
         Returns:
             Scenario records from the active workspace.
+        """
+        ...
+
+    def list_traces(self) -> list[TraceRecord]:
+        """List imported trace records.
+
+        Returns:
+            Trace records from the active workspace.
+        """
+        ...
+
+    def inspect_trace(self, trace_id: str) -> TraceInspection:
+        """Inspect one imported trace.
+
+        Args:
+            trace_id: Trace Library identifier.
+
+        Returns:
+            Trace metadata plus source summaries.
         """
         ...
 
@@ -164,13 +184,154 @@ class DraftRouteRow:
 
 
 @dataclass(frozen=True)
+class ScenarioTraceChoice:
+    """Imported trace option used by the New Scenario dialog."""
+
+    trace_id: str
+    name: str
+    event_count: int
+
+    @classmethod
+    def from_record(cls, record: TraceRecord) -> "ScenarioTraceChoice":
+        """Build a trace choice from a Trace Library record.
+
+        Args:
+            record: Trace Library record returned by the app layer.
+
+        Returns:
+            Trace option ready for UI selection.
+        """
+        return cls(
+            trace_id=record.trace_id,
+            name=record.name,
+            event_count=int(record.event_count),
+        )
+
+
+@dataclass(frozen=True)
+class ScenarioSourceChoice:
+    """Trace source option used by the New Scenario dialog."""
+
+    trace_id: str
+    source_channel: int
+    bus: str
+    frame_count: int
+
+    @classmethod
+    def from_summary(cls, trace_id: str, summary: object) -> "ScenarioSourceChoice":
+        """Build a source choice from a trace source summary.
+
+        Args:
+            trace_id: Trace Library identifier.
+            summary: Source summary returned by the app layer.
+
+        Returns:
+            Source option ready for UI selection.
+        """
+        return cls(
+            trace_id=str(trace_id),
+            source_channel=int(getattr(summary, "source_channel")),
+            bus=str(getattr(getattr(summary, "bus"), "value", getattr(summary, "bus"))),
+            frame_count=int(getattr(summary, "frame_count")),
+        )
+
+    @property
+    def label(self) -> str:
+        """Return a compact label for UI display.
+
+        Returns:
+            Source channel, bus, and frame count text.
+        """
+        return f"CH{self.source_channel} {self.bus} frames={self.frame_count}"
+
+
+@dataclass(frozen=True)
+class ScenarioSourceEndpointChoice:
+    """Existing draft source endpoint option used by route editors."""
+
+    source_id: str
+    label: str
+    bus: str
+
+    @classmethod
+    def from_row(cls, row: DraftSourceRow) -> "ScenarioSourceEndpointChoice":
+        """Build a source endpoint choice from a draft source row.
+
+        Args:
+            row: Draft source row from the current scenario draft.
+
+        Returns:
+            Source endpoint option ready for a route source selector.
+        """
+        return cls(
+            source_id=row.source_id,
+            label=_source_label(row, row.source_id),
+            bus=row.bus,
+        )
+
+
+@dataclass(frozen=True)
+class ScenarioTargetEndpointChoice:
+    """Existing draft target endpoint option used by route editors."""
+
+    target_id: str
+    label: str
+    bus: str
+
+    @classmethod
+    def from_row(cls, row: DraftTargetRow) -> "ScenarioTargetEndpointChoice":
+        """Build a target endpoint choice from a draft target row.
+
+        Args:
+            row: Draft target row from the current scenario draft.
+
+        Returns:
+            Target endpoint option ready for a route target selector.
+        """
+        return cls(
+            target_id=row.target_id,
+            label=_target_label(row, row.target_id),
+            bus=row.bus,
+        )
+
+
+@dataclass(frozen=True)
+class ScenarioDraftIssue:
+    """Field-level issue detected in a scenario draft before app validation."""
+
+    section: str
+    row: int | None
+    field: str
+    message: str
+    severity: str = "error"
+
+    @property
+    def location(self) -> str:
+        """Return a compact section/row/field location string.
+
+        Returns:
+            Human-readable draft field location.
+        """
+        if self.row is None:
+            return f"{self.section}.{self.field}"
+        return f"{self.section}[{self.row}].{self.field}"
+
+
+@dataclass(frozen=True)
 class ScenarioDraft:
-    """Read-only UI draft mapped from a saved schema v2 scenario body."""
+    """UI draft mapped from a schema v2 scenario body.
+
+    The draft is immutable from the ViewModel's perspective. Editing commands
+    replace the body with a copied mapping and rebuild display rows so the JSON
+    preview, route labels, and Inspector stay in sync.
+    """
 
     scenario_id: str
     name: str
     schema_version: int
     base_dir: str
+    is_new: bool
+    dirty: bool
     traces: tuple[DraftTraceRow, ...]
     devices: tuple[DraftDeviceRow, ...]
     sources: tuple[DraftSourceRow, ...]
@@ -180,11 +341,17 @@ class ScenarioDraft:
     body: dict[str, Any]
 
     @classmethod
-    def from_record(cls, record: ScenarioRecord) -> "ScenarioDraft":
-        """Build a read-only UI draft from a saved scenario record.
+    def from_record(
+        cls,
+        record: ScenarioRecord,
+        *,
+        dirty: bool = False,
+    ) -> "ScenarioDraft":
+        """Build a UI draft from a saved scenario record.
 
         Args:
             record: Saved scenario record from the app layer.
+            dirty: Whether the draft has unsaved UI edits.
 
         Returns:
             Scenario draft for the editor preview.
@@ -233,6 +400,8 @@ class ScenarioDraft:
             name=str(body.get("name", record.name)),
             schema_version=schema_version,
             base_dir=record.base_dir,
+            is_new=False,
+            dirty=dirty,
             traces=traces,
             devices=devices,
             sources=sources,
@@ -240,6 +409,53 @@ class ScenarioDraft:
             routes=routes,
             json_text=json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True),
             body=body,
+        )
+
+    @classmethod
+    def from_body(
+        cls,
+        body: dict[str, Any],
+        *,
+        scenario_id: str = "",
+        base_dir: str = ".",
+        is_new: bool = False,
+        dirty: bool = False,
+    ) -> "ScenarioDraft":
+        """Build a UI draft directly from a schema v2 body.
+
+        Args:
+            body: Schema v2 scenario body.
+            scenario_id: Saved scenario identifier, empty for new drafts.
+            base_dir: Directory used to resolve relative trace paths.
+            is_new: Whether the draft has not been saved yet.
+            dirty: Whether the draft has unsaved UI edits.
+
+        Returns:
+            Scenario draft for editing and preview.
+        """
+        record = ScenarioRecord(
+            scenario_id=scenario_id,
+            name=str(body.get("name", "")),
+            base_dir=str(base_dir),
+            body=body,
+            trace_count=len(_body_list(dict(body), "traces")),
+            route_count=len(_body_list(dict(body), "routes")),
+        )
+        draft = cls.from_record(record, dirty=dirty)
+        return cls(
+            scenario_id=draft.scenario_id,
+            name=draft.name,
+            schema_version=draft.schema_version,
+            base_dir=draft.base_dir,
+            is_new=is_new,
+            dirty=draft.dirty,
+            traces=draft.traces,
+            devices=draft.devices,
+            sources=draft.sources,
+            targets=draft.targets,
+            routes=draft.routes,
+            json_text=draft.json_text,
+            body=draft.body,
         )
 
 
@@ -306,6 +522,8 @@ class ScenariosViewModel(BaseViewModel):
     draftChanged = Signal()
     validationChanged = Signal()
     deleteResultChanged = Signal()
+    traceChoicesChanged = Signal()
+    draftIssuesChanged = Signal()
 
     def __init__(self, application: ScenarioListApplication, task_runner: TaskRunner) -> None:
         """Initialize the Scenarios ViewModel.
@@ -322,10 +540,13 @@ class ScenariosViewModel(BaseViewModel):
         self._validate_task_name = f"scenarios-validate-{id(self)}"
         self._save_task_name = f"scenarios-save-{id(self)}"
         self._delete_task_name = f"scenarios-delete-{id(self)}"
+        self._trace_choices_task_name = f"scenarios-trace-choices-{id(self)}"
         self._rows: tuple[ScenarioRow, ...] = ()
         self._draft: ScenarioDraft | None = None
         self._validation: ScenarioValidationDetails | None = None
         self._delete_result: ScenarioDeleteResultDetails | None = None
+        self._trace_choices: tuple[ScenarioTraceChoice, ...] = ()
+        self._draft_issues: tuple[ScenarioDraftIssue, ...] = ()
 
     @property
     def rows(self) -> tuple[ScenarioRow, ...]:
@@ -362,6 +583,47 @@ class ScenariosViewModel(BaseViewModel):
             Deleted scenario details, or None when no delete result is active.
         """
         return self._delete_result
+
+    @property
+    def trace_choices(self) -> tuple[ScenarioTraceChoice, ...]:
+        """Return imported trace choices for creating a new scenario.
+
+        Returns:
+            Immutable tuple of trace options.
+        """
+        return self._trace_choices
+
+    @property
+    def draft_issues(self) -> tuple[ScenarioDraftIssue, ...]:
+        """Return local field-level issues for the current draft.
+
+        Returns:
+            Immutable tuple of draft issue rows. Empty when there is no draft
+            or no local issue is detected.
+        """
+        return self._draft_issues
+
+    @property
+    def source_endpoint_choices(self) -> tuple[ScenarioSourceEndpointChoice, ...]:
+        """Return source endpoints available to route editors.
+
+        Returns:
+            Current draft source endpoints, or an empty tuple with no draft.
+        """
+        if self._draft is None:
+            return ()
+        return tuple(ScenarioSourceEndpointChoice.from_row(row) for row in self._draft.sources)
+
+    @property
+    def target_endpoint_choices(self) -> tuple[ScenarioTargetEndpointChoice, ...]:
+        """Return target endpoints available to route editors.
+
+        Returns:
+            Current draft target endpoints, or an empty tuple with no draft.
+        """
+        if self._draft is None:
+            return ()
+        return tuple(ScenarioTargetEndpointChoice.from_row(row) for row in self._draft.targets)
 
     def refresh(self) -> None:
         """Reload saved scenario rows from the active workspace."""
@@ -437,7 +699,7 @@ class ScenariosViewModel(BaseViewModel):
         def save_and_list() -> tuple[ScenarioRecord, list[ScenarioRecord]]:
             record = self._application.save_scenario_body(
                 draft.body,
-                scenario_id=draft.scenario_id,
+                scenario_id=None if draft.is_new else draft.scenario_id,
                 base_dir=draft.base_dir,
             )
             return record, self._application.list_scenarios()
@@ -451,6 +713,233 @@ class ScenariosViewModel(BaseViewModel):
             failure_status="Scenario 保存失败",
             duplicate_status="Scenarios 正在执行任务",
         )
+
+    def load_trace_choices(self) -> None:
+        """Load imported traces for the New Scenario dialog."""
+        if self.busy:
+            self.set_status_message("Scenarios 正在执行任务")
+            return
+        self.run_background_task(
+            self._task_runner,
+            self._trace_choices_task_name,
+            self._application.list_traces,
+            self._apply_trace_choices,
+            start_status="正在读取 Trace 选项",
+            failure_status="Trace 选项加载失败",
+            duplicate_status="Scenarios 正在执行任务",
+        )
+
+    def source_choices_for_trace(self, trace_id: str) -> tuple[ScenarioSourceChoice, ...]:
+        """Return source choices for one imported trace.
+
+        Args:
+            trace_id: Trace Library identifier.
+
+        Returns:
+            Source choices built from trace inspection summaries.
+
+        Raises:
+            KeyError: If the trace ID is unknown to the app layer.
+        """
+        value = str(trace_id)
+        if not value:
+            return ()
+        inspection = self._application.inspect_trace(value)
+        return tuple(ScenarioSourceChoice.from_summary(value, summary) for summary in inspection.sources)
+
+    def create_new_scenario_from_trace(
+        self,
+        trace: ScenarioTraceChoice,
+        source: ScenarioSourceChoice,
+        *,
+        name: str = "",
+    ) -> None:
+        """Create a new in-memory scenario draft from one trace source.
+
+        Args:
+            trace: Imported trace selected by the user.
+            source: Source channel and bus selected from trace inspection.
+            name: Optional scenario name. When empty, a name is derived from
+                the trace file name.
+        """
+        scenario_name = str(name).strip() or _default_scenario_name(trace.name)
+        body = _new_scenario_body(trace, source, name=scenario_name)
+        self._set_draft(
+            ScenarioDraft.from_body(
+                body,
+                scenario_id="",
+                base_dir=".",
+                is_new=True,
+                dirty=True,
+            )
+        )
+        self._set_validation(None)
+        self._set_delete_result(None)
+        self.set_status_message(f"Scenario draft 已创建: {scenario_name}")
+
+    def rename_loaded_scenario(self, name: str) -> None:
+        """Update the loaded draft's scenario name.
+
+        Args:
+            name: New scenario name.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        body["name"] = str(name)
+        self._replace_draft_body(body)
+
+    def set_timeline_loop(self, loop: bool) -> None:
+        """Update the loaded draft loop setting.
+
+        Args:
+            loop: Whether the scenario timeline should loop.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        timeline = dict(body.get("timeline") if isinstance(body.get("timeline"), dict) else {})
+        timeline["loop"] = bool(loop)
+        body["timeline"] = timeline
+        self._replace_draft_body(body)
+
+    def set_route_logical_channel(self, index: int, value: int) -> None:
+        """Update one route logical channel in the loaded draft.
+
+        Args:
+            index: Route row index.
+            value: New logical channel value.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        routes = _body_list(body, "routes")
+        if not _valid_index(routes, index):
+            self.set_status_message("Route 不存在")
+            return
+        routes[int(index)]["logical_channel"] = int(value)
+        body["routes"] = routes
+        self._replace_draft_body(body)
+
+    def set_route_source(self, index: int, source_id: str) -> None:
+        """Update one route source reference in the loaded draft.
+
+        Args:
+            index: Route row index.
+            source_id: Source endpoint ID to assign to the route.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        routes = _body_list(body, "routes")
+        if not _valid_index(routes, index):
+            self.set_status_message("Route 不存在")
+            return
+        routes[int(index)]["source"] = str(source_id)
+        body["routes"] = routes
+        self._replace_draft_body(body)
+
+    def set_route_target(self, index: int, target_id: str) -> None:
+        """Update one route target reference in the loaded draft.
+
+        Args:
+            index: Route row index.
+            target_id: Target endpoint ID to assign to the route.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        routes = _body_list(body, "routes")
+        if not _valid_index(routes, index):
+            self.set_status_message("Route 不存在")
+            return
+        routes[int(index)]["target"] = str(target_id)
+        body["routes"] = routes
+        self._replace_draft_body(body)
+
+    def set_target_physical_channel(self, index: int, value: int) -> None:
+        """Update one target physical channel in the loaded draft.
+
+        Args:
+            index: Target row index.
+            value: New physical channel value.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        targets = _body_list(body, "targets")
+        if not _valid_index(targets, index):
+            self.set_status_message("Target 不存在")
+            return
+        targets[int(index)]["physical_channel"] = int(value)
+        body["targets"] = targets
+        self._replace_draft_body(body)
+
+    def add_route_from_trace(
+        self,
+        trace: ScenarioTraceChoice,
+        source: ScenarioSourceChoice,
+        *,
+        logical_channel: int,
+        physical_channel: int,
+    ) -> None:
+        """Append a route using an imported trace source and a mock target.
+
+        Args:
+            trace: Imported trace selected by the user.
+            source: Source channel and bus selected from trace inspection.
+            logical_channel: Logical replay channel for the new route.
+            physical_channel: Mock target physical channel for the new route.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        _ensure_trace_resource(body, trace)
+        _ensure_mock_device(body)
+        source_id = _ensure_source_resource(body, trace, source)
+        target_id = _ensure_mock_target_resource(
+            body,
+            bus=source.bus,
+            physical_channel=int(physical_channel),
+        )
+        routes = _body_list(body, "routes")
+        routes.append(
+            {
+                "logical_channel": int(logical_channel),
+                "source": source_id,
+                "target": target_id,
+            }
+        )
+        body["routes"] = routes
+        self._replace_draft_body(body, status_message="Route 已添加")
+
+    def remove_route(self, index: int) -> None:
+        """Remove one route from the loaded draft.
+
+        Removing a route does not delete trace, source, target, or device
+        resources, so users do not accidentally lose reusable endpoints.
+
+        Args:
+            index: Route row index to remove.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        routes = _body_list(body, "routes")
+        if not _valid_index(routes, index):
+            self.set_status_message("Route 不存在")
+            return
+        del routes[int(index)]
+        body["routes"] = routes
+        self._replace_draft_body(body, status_message="Route 已删除")
 
     def delete_scenario(self, scenario_id: str) -> None:
         """Delete one saved scenario and refresh rows.
@@ -516,12 +1005,19 @@ class ScenariosViewModel(BaseViewModel):
         self.rowsChanged.emit()
         self.set_status_message(f"Scenario 已删除: {record.name}")
 
+    def _apply_trace_choices(self, result: object) -> None:
+        self._trace_choices = tuple(ScenarioTraceChoice.from_record(record) for record in result)
+        self.traceChoicesChanged.emit()
+        self.set_status_message(f"Trace 选项已加载 {len(self._trace_choices)} 条")
+
     def _replace_rows(self, records: object) -> None:
         self._rows = tuple(ScenarioRow.from_record(record) for record in records)
 
     def _set_draft(self, draft: ScenarioDraft | None) -> None:
         self._draft = draft
+        self._draft_issues = _draft_issues_for(draft)
         self.draftChanged.emit()
+        self.draftIssuesChanged.emit()
 
     def _set_validation(self, validation: ScenarioValidationDetails | None) -> None:
         self._validation = validation
@@ -530,6 +1026,35 @@ class ScenariosViewModel(BaseViewModel):
     def _set_delete_result(self, result: ScenarioDeleteResultDetails | None) -> None:
         self._delete_result = result
         self.deleteResultChanged.emit()
+
+    def _require_draft_for_edit(self) -> ScenarioDraft:
+        if self._draft is None:
+            raise RuntimeError("No Scenario draft is loaded.")
+        return self._draft
+
+    def _can_edit_draft(self) -> bool:
+        if self.busy:
+            self.set_status_message("Scenarios 正在执行任务")
+            return False
+        if self._draft is None:
+            self.set_status_message("未加载 Scenario")
+            return False
+        return True
+
+    def _replace_draft_body(self, body: dict[str, Any], *, status_message: str = "Scenario draft 已修改") -> None:
+        draft = self._require_draft_for_edit()
+        self._set_draft(
+            ScenarioDraft.from_body(
+                body,
+                scenario_id=draft.scenario_id,
+                base_dir=draft.base_dir,
+                is_new=draft.is_new,
+                dirty=True,
+            )
+        )
+        self._set_validation(None)
+        self._set_delete_result(None)
+        self.set_status_message(status_message)
 
 
 def _body_mapping(value: object) -> dict[str, Any]:
@@ -548,6 +1073,10 @@ def _body_list(body: dict[str, Any], key: str) -> list[dict[str, Any]]:
             raise ValueError(f"Scenario body field contains a non-object item: {key}")
         rows.append(dict(item))
     return rows
+
+
+def _valid_index(rows: list[dict[str, Any]], index: int) -> bool:
+    return 0 <= int(index) < len(rows)
 
 
 def _draft_routes(
@@ -584,3 +1113,238 @@ def _target_label(target: DraftTargetRow | None, fallback: str) -> str:
     if target is None:
         return fallback
     return f"{target.device_id} / CH{target.physical_channel} {target.bus}"
+
+
+def _copy_body(body: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(body, ensure_ascii=False))
+
+
+def _default_scenario_name(trace_name: str) -> str:
+    stem = Path(str(trace_name)).stem or "trace"
+    return f"replay-{stem}"
+
+
+def _safe_id(value: str) -> str:
+    normalized = "".join(character.lower() if character.isalnum() else "-" for character in str(value))
+    parts = [part for part in normalized.split("-") if part]
+    return "-".join(parts) or "item"
+
+
+def _resource_ids(body: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for key in ("traces", "devices", "sources", "targets"):
+        for item in _body_list(body, key):
+            value = str(item.get("id", ""))
+            if value:
+                ids.add(value)
+    return ids
+
+
+def _unique_resource_id(base: str, existing: set[str]) -> str:
+    candidate = base
+    suffix = 2
+    while candidate in existing:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _ensure_trace_resource(body: dict[str, Any], trace: ScenarioTraceChoice) -> None:
+    traces = _body_list(body, "traces")
+    if all(str(item.get("id", "")) != trace.trace_id for item in traces):
+        traces.append({"id": trace.trace_id, "path": trace.trace_id})
+    body["traces"] = traces
+
+
+def _ensure_mock_device(body: dict[str, Any]) -> None:
+    devices = _body_list(body, "devices")
+    if all(str(item.get("id", "")) != "mock0" for item in devices):
+        devices.append({"id": "mock0", "driver": "mock"})
+    body["devices"] = devices
+
+
+def _ensure_source_resource(
+    body: dict[str, Any],
+    trace: ScenarioTraceChoice,
+    source: ScenarioSourceChoice,
+) -> str:
+    sources = _body_list(body, "sources")
+    for item in sources:
+        if (
+            str(item.get("trace", "")) == trace.trace_id
+            and int(item.get("channel", -1)) == source.source_channel
+            and str(item.get("bus", "")) == source.bus
+        ):
+            return str(item.get("id", ""))
+    bus_id = _safe_id(source.bus)
+    base_id = f"{_safe_id(trace.trace_id)}-ch{source.source_channel}-{bus_id}"
+    source_id = _unique_resource_id(base_id, _resource_ids(body))
+    sources.append(
+        {
+            "id": source_id,
+            "trace": trace.trace_id,
+            "channel": source.source_channel,
+            "bus": source.bus,
+        }
+    )
+    body["sources"] = sources
+    return source_id
+
+
+def _ensure_mock_target_resource(
+    body: dict[str, Any],
+    *,
+    bus: str,
+    physical_channel: int,
+) -> str:
+    targets = _body_list(body, "targets")
+    for item in targets:
+        if (
+            str(item.get("device", "")) == "mock0"
+            and int(item.get("physical_channel", -1)) == int(physical_channel)
+            and str(item.get("bus", "")) == str(bus)
+        ):
+            return str(item.get("id", ""))
+    bus_id = _safe_id(str(bus))
+    base_id = f"mock0-ch{int(physical_channel)}-{bus_id}"
+    target_id = _unique_resource_id(base_id, _resource_ids(body))
+    targets.append(
+        {
+            "id": target_id,
+            "device": "mock0",
+            "physical_channel": int(physical_channel),
+            "bus": str(bus),
+        }
+    )
+    body["targets"] = targets
+    return target_id
+
+
+def _draft_issues_for(draft: ScenarioDraft | None) -> tuple[ScenarioDraftIssue, ...]:
+    if draft is None:
+        return ()
+    issues: list[ScenarioDraftIssue] = []
+    if not draft.name.strip():
+        issues.append(
+            ScenarioDraftIssue(
+                section="overview",
+                row=None,
+                field="name",
+                message="Scenario name is required.",
+            )
+        )
+    trace_ids = {row.trace_id for row in draft.traces}
+    device_ids = {row.device_id for row in draft.devices}
+    sources_by_id = {row.source_id: row for row in draft.sources}
+    targets_by_id = {row.target_id: row for row in draft.targets}
+    for row_index, source in enumerate(draft.sources):
+        if source.trace_id not in trace_ids:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="sources",
+                    row=row_index,
+                    field="trace",
+                    message=f"Source references unknown trace: {source.trace_id}",
+                )
+            )
+    for row_index, target in enumerate(draft.targets):
+        if target.device_id not in device_ids:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="device",
+                    message=f"Target references unknown device: {target.device_id}",
+                )
+            )
+    if not draft.routes:
+        issues.append(
+            ScenarioDraftIssue(
+                section="routes",
+                row=None,
+                field="routes",
+                message="At least one route is required.",
+            )
+        )
+    logical_channels: dict[int, int] = {}
+    for row_index, route in enumerate(draft.routes):
+        previous = logical_channels.get(route.logical_channel)
+        if previous is not None:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="routes",
+                    row=row_index,
+                    field="logical_channel",
+                    message=(
+                        f"Logical channel {route.logical_channel} is already used "
+                        f"by route {previous}."
+                    ),
+                )
+            )
+        logical_channels[route.logical_channel] = row_index
+        source = sources_by_id.get(route.source_id)
+        target = targets_by_id.get(route.target_id)
+        if source is None:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="routes",
+                    row=row_index,
+                    field="source",
+                    message=f"Route references unknown source: {route.source_id}",
+                )
+            )
+        if target is None:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="routes",
+                    row=row_index,
+                    field="target",
+                    message=f"Route references unknown target: {route.target_id}",
+                )
+            )
+        if source is not None and target is not None and source.bus != target.bus:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="routes",
+                    row=row_index,
+                    field="target",
+                    message=f"Route connects {source.bus} source to {target.bus} target.",
+                )
+            )
+    return tuple(issues)
+
+
+def _new_scenario_body(
+    trace: ScenarioTraceChoice,
+    source: ScenarioSourceChoice,
+    *,
+    name: str,
+) -> dict[str, Any]:
+    bus = source.bus
+    bus_id = _safe_id(bus)
+    source_id = f"{_safe_id(trace.trace_id)}-ch{source.source_channel}-{bus_id}"
+    target_id = f"mock0-ch0-{bus_id}"
+    return {
+        "schema_version": 2,
+        "name": str(name),
+        "traces": [{"id": trace.trace_id, "path": trace.trace_id}],
+        "devices": [{"id": "mock0", "driver": "mock"}],
+        "sources": [
+            {
+                "id": source_id,
+                "trace": trace.trace_id,
+                "channel": source.source_channel,
+                "bus": bus,
+            }
+        ],
+        "targets": [
+            {
+                "id": target_id,
+                "device": "mock0",
+                "physical_channel": 0,
+                "bus": bus,
+            }
+        ],
+        "routes": [{"logical_channel": 0, "source": source_id, "target": target_id}],
+        "timeline": {"loop": False},
+    }

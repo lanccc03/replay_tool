@@ -27,7 +27,7 @@ from replay_tool.ports.trace_store import (
 )
 from replay_ui_qt.tasks import TaskRunner
 from replay_ui_qt.view_models.base import BaseViewModel
-from replay_ui_qt.view_models.scenarios import ScenariosViewModel
+from replay_ui_qt.view_models.scenarios import ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 
 
@@ -125,6 +125,10 @@ class _ScenarioApp:
         validation_plan: ReplayPlan | None = None,
         save_record: ScenarioRecord | None = None,
         delete_record: ScenarioRecord | None = None,
+        trace_records: list[TraceRecord] | None = None,
+        trace_inspection: TraceInspection | None = None,
+        trace_error: Exception | None = None,
+        inspect_trace_error: Exception | None = None,
     ) -> None:
         self.records = records or []
         self.error = error
@@ -136,7 +140,12 @@ class _ScenarioApp:
         self.validation_plan = validation_plan
         self.save_record = save_record
         self.delete_record = delete_record
+        self.trace_records = trace_records or []
+        self.trace_inspection = trace_inspection
+        self.trace_error = trace_error
+        self.inspect_trace_error = inspect_trace_error
         self.calls = 0
+        self.trace_calls = 0
         self.loaded_ids: list[str] = []
         self.validated_bodies: list[dict[str, object]] = []
         self.validation_base_dirs: list[Path] = []
@@ -144,6 +153,7 @@ class _ScenarioApp:
         self.saved_ids: list[str | None] = []
         self.save_base_dirs: list[Path] = []
         self.deleted_ids: list[str] = []
+        self.inspected_trace_ids: list[str] = []
 
     def list_scenarios(self) -> list[ScenarioRecord]:
         self.calls += 1
@@ -161,6 +171,20 @@ class _ScenarioApp:
             if record.scenario_id == scenario_id:
                 return record
         raise KeyError(scenario_id)
+
+    def list_traces(self) -> list[TraceRecord]:
+        self.trace_calls += 1
+        if self.trace_error is not None:
+            raise self.trace_error
+        return list(self.trace_records)
+
+    def inspect_trace(self, trace_id: str) -> TraceInspection:
+        self.inspected_trace_ids.append(trace_id)
+        if self.inspect_trace_error is not None:
+            raise self.inspect_trace_error
+        if self.trace_inspection is None:
+            raise KeyError(trace_id)
+        return self.trace_inspection
 
     def validate_scenario_body(
         self,
@@ -231,6 +255,30 @@ def _scenario_record(body: dict[str, object] | None = None, *, scenario_id: str 
         updated_at="2026-05-08T00:00:00",
         trace_count=1,
         route_count=1,
+    )
+
+
+def _trace_record(trace_id: str = "trace-1", *, name: str = "sample.asc") -> TraceRecord:
+    return TraceRecord(
+        trace_id=trace_id,
+        name=name,
+        original_path=name,
+        library_path=name,
+        cache_path=f"{trace_id}.frames.bin",
+        imported_at="2026-05-08T00:00:00",
+        event_count=7,
+    )
+
+
+def _trace_inspection(
+    record: TraceRecord | None = None,
+    sources: tuple[TraceSourceSummary, ...] | None = None,
+) -> TraceInspection:
+    trace = record or _trace_record()
+    return TraceInspection(
+        record=trace,
+        sources=sources or (TraceSourceSummary(source_channel=0, bus=BusType.CANFD, frame_count=7),),
+        messages=(),
     )
 
 
@@ -742,6 +790,8 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertEqual("mock0 / CH0 CANFD", draft.routes[0].target_label)
         self.assertIn('"schema_version": 2', draft.json_text)
         self.assertEqual("Scenario 已加载: demo", view_model.status_message)
+        self.assertFalse(draft.is_new)
+        self.assertFalse(draft.dirty)
 
     def test_load_scenario_failure_preserves_rows_and_reports_error(self) -> None:
         record = _scenario_record()
@@ -788,6 +838,197 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertEqual(1, view_model.validation.channel_count)
         self.assertEqual(12345, view_model.validation.total_ts_ns)
         self.assertEqual("Scenario 校验通过: validated", view_model.status_message)
+
+    def test_load_trace_choices_and_create_new_draft_from_trace_source(self) -> None:
+        trace = _trace_record("trace-lib-1", name="sample.asc")
+        scenario_app = _ScenarioApp(trace_records=[trace], trace_inspection=_trace_inspection(trace))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_trace_choices()
+        _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
+        sources = view_model.source_choices_for_trace("trace-lib-1")
+        view_model.create_new_scenario_from_trace(view_model.trace_choices[0], sources[0])
+
+        self.assertEqual(1, scenario_app.trace_calls)
+        self.assertEqual(["trace-lib-1"], scenario_app.inspected_trace_ids)
+        self.assertIsNotNone(view_model.draft)
+        draft = view_model.draft
+        self.assertTrue(draft.is_new)
+        self.assertTrue(draft.dirty)
+        self.assertEqual("", draft.scenario_id)
+        self.assertEqual("replay-sample", draft.name)
+        self.assertEqual("trace-lib-1", draft.traces[0].trace_id)
+        self.assertEqual("trace-lib-1", draft.traces[0].path)
+        self.assertEqual("trace-lib-1 / CH0 CANFD", draft.routes[0].source_label)
+        self.assertEqual("mock0 / CH0 CANFD", draft.routes[0].target_label)
+        self.assertEqual("Scenario draft 已创建: replay-sample", view_model.status_message)
+
+    def test_save_new_draft_creates_record_without_scenario_id(self) -> None:
+        trace = _trace_record("trace-lib-1", name="sample.asc")
+        saved_body = _scenario_body()
+        saved_body["name"] = "replay-sample"
+        saved_record = _scenario_record(saved_body, scenario_id="generated-id")
+        scenario_app = _ScenarioApp(
+            trace_records=[trace],
+            trace_inspection=_trace_inspection(trace),
+            save_record=saved_record,
+        )
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view_model.create_new_scenario_from_trace(
+            ScenarioTraceChoice.from_record(trace),
+            view_model.source_choices_for_trace(trace.trace_id)[0],
+        )
+
+        view_model.save_loaded_scenario()
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None and not view_model.draft.is_new, self._app)
+
+        self.assertEqual([None], scenario_app.saved_ids)
+        self.assertEqual(Path("."), scenario_app.save_base_dirs[0])
+        self.assertEqual("generated-id", view_model.draft.scenario_id)
+        self.assertFalse(view_model.draft.is_new)
+        self.assertFalse(view_model.draft.dirty)
+
+    def test_real_application_new_draft_save_and_validate_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            replay_app = ReplayApplication(workspace=Path(tmp) / "workspace")
+            trace = replay_app.import_trace(ROOT / "examples" / "sample.asc")
+            view_model = ScenariosViewModel(replay_app, _runner())
+
+            view_model.load_trace_choices()
+            _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
+            sources = view_model.source_choices_for_trace(trace.trace_id)
+            view_model.create_new_scenario_from_trace(view_model.trace_choices[0], sources[0])
+            view_model.add_route_from_trace(
+                view_model.trace_choices[0],
+                sources[0],
+                logical_channel=1,
+                physical_channel=1,
+            )
+            view_model.rename_loaded_scenario("created-from-ui-draft")
+            view_model.save_loaded_scenario()
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None and not view_model.draft.is_new, self._app)
+            view_model.validate_loaded_scenario()
+            _wait_for(lambda: not view_model.busy and view_model.validation is not None, self._app)
+
+            self.assertEqual("created-from-ui-draft", view_model.draft.name)
+            self.assertEqual("created-from-ui-draft", view_model.validation.name)
+            self.assertEqual(2, view_model.validation.timeline_size)
+            self.assertEqual(2, view_model.validation.channel_count)
+            self.assertEqual(1, len(view_model.rows))
+
+    def test_editing_loaded_draft_updates_body_marks_dirty_and_clears_validation(self) -> None:
+        plan = _replay_plan("validated")
+        scenario_app = _ScenarioApp(records=[_scenario_record()], validation_plan=plan)
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.validate_loaded_scenario()
+        _wait_for(lambda: not view_model.busy and view_model.validation is not None, self._app)
+
+        view_model.rename_loaded_scenario("edited")
+        view_model.set_timeline_loop(True)
+        view_model.set_route_logical_channel(0, 3)
+        view_model.set_target_physical_channel(0, 2)
+
+        draft = view_model.draft
+        self.assertEqual("edited", draft.name)
+        self.assertTrue(draft.dirty)
+        self.assertFalse(draft.is_new)
+        self.assertIsNone(view_model.validation)
+        self.assertEqual("edited", draft.body["name"])
+        self.assertTrue(draft.body["timeline"]["loop"])
+        self.assertEqual(3, draft.body["routes"][0]["logical_channel"])
+        self.assertEqual(2, draft.body["targets"][0]["physical_channel"])
+        self.assertIn('"name": "edited"', draft.json_text)
+        self.assertEqual("mock0 / CH2 CANFD", draft.routes[0].target_label)
+
+    def test_add_route_from_trace_reuses_source_and_creates_mock_target(self) -> None:
+        trace = _trace_record("trace-lib-1", name="sample.asc")
+        scenario_app = _ScenarioApp(trace_records=[trace], trace_inspection=_trace_inspection(trace))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        source = view_model.source_choices_for_trace(trace.trace_id)[0]
+
+        view_model.create_new_scenario_from_trace(ScenarioTraceChoice.from_record(trace), source)
+        view_model.add_route_from_trace(
+            ScenarioTraceChoice.from_record(trace),
+            source,
+            logical_channel=1,
+            physical_channel=1,
+        )
+
+        draft = view_model.draft
+        self.assertIsNotNone(draft)
+        self.assertEqual(1, len(draft.sources))
+        self.assertEqual(2, len(draft.targets))
+        self.assertEqual(2, len(draft.routes))
+        self.assertEqual("trace-lib-1-ch0-canfd", draft.routes[1].source_id)
+        self.assertEqual("mock0-ch1-canfd", draft.routes[1].target_id)
+        self.assertEqual(1, draft.body["routes"][1]["logical_channel"])
+        self.assertTrue(draft.dirty)
+        self.assertEqual((), view_model.draft_issues)
+        self.assertEqual("Route 已添加", view_model.status_message)
+
+    def test_remove_route_only_removes_route_and_reports_empty_routes_issue(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.remove_route(0)
+
+        draft = view_model.draft
+        self.assertEqual(0, len(draft.routes))
+        self.assertEqual(1, len(draft.sources))
+        self.assertEqual(1, len(draft.targets))
+        self.assertTrue(draft.dirty)
+        self.assertIn("At least one route", view_model.draft_issues[0].message)
+        self.assertEqual("Route 已删除", view_model.status_message)
+
+    def test_route_endpoint_edits_update_body_and_bus_mismatch_issue(self) -> None:
+        body = _scenario_body()
+        body["targets"] = [
+            *body["targets"],
+            {"id": "target-can", "device": "mock0", "physical_channel": 1, "bus": "CAN"},
+        ]
+        scenario_app = _ScenarioApp(records=[_scenario_record(body)])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.set_route_target(0, "target-can")
+
+        draft = view_model.draft
+        self.assertEqual("target-can", draft.body["routes"][0]["target"])
+        self.assertIn("mock0 / CH1 CAN", draft.routes[0].target_label)
+        self.assertEqual("routes[0].target", view_model.draft_issues[0].location)
+        self.assertIn("CANFD source to CAN target", view_model.draft_issues[0].message)
+
+        view_model.set_route_target(0, "target0")
+
+        self.assertEqual((), view_model.draft_issues)
+        self.assertEqual("target0", view_model.draft.body["routes"][0]["target"])
+
+    def test_duplicate_logical_channel_and_unknown_references_map_to_draft_issues(self) -> None:
+        body = _scenario_body()
+        body["routes"] = [
+            {"logical_channel": 0, "source": "source0", "target": "target0"},
+            {"logical_channel": 0, "source": "missing-source", "target": "missing-target"},
+        ]
+        scenario_app = _ScenarioApp(records=[_scenario_record(body)])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+        locations = [issue.location for issue in view_model.draft_issues]
+        messages = "\n".join(issue.message for issue in view_model.draft_issues)
+        self.assertIn("routes[1].logical_channel", locations)
+        self.assertIn("routes[1].source", locations)
+        self.assertIn("routes[1].target", locations)
+        self.assertIn("Logical channel 0", messages)
+        self.assertIn("unknown source", messages)
+        self.assertIn("unknown target", messages)
 
     def test_validate_loaded_scenario_failure_preserves_rows_and_draft(self) -> None:
         record = _scenario_record()
@@ -863,6 +1104,40 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertEqual([], scenario_app.validated_bodies)
         self.assertEqual([], scenario_app.saved_bodies)
         self.assertEqual([], scenario_app.deleted_ids)
+        self.assertEqual("Scenarios 正在执行任务", view_model.status_message)
+
+        release.set()
+        _wait_for(lambda: not view_model.busy, self._app)
+
+    def test_busy_scenario_view_model_rejects_draft_edits(self) -> None:
+        release = threading.Event()
+        trace = _trace_record("trace-lib-1", name="sample.asc")
+        scenario_app = _ScenarioApp(
+            records=[],
+            release=release,
+            trace_records=[trace],
+            trace_inspection=_trace_inspection(trace),
+        )
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        source = view_model.source_choices_for_trace(trace.trace_id)[0]
+        view_model.create_new_scenario_from_trace(ScenarioTraceChoice.from_record(trace), source)
+        original_body = dict(view_model.draft.body)
+
+        view_model.refresh()
+        _wait_for(lambda: scenario_app.calls == 1 and view_model.busy, self._app)
+        view_model.rename_loaded_scenario("busy-edit")
+        view_model.set_route_logical_channel(0, 4)
+        view_model.set_route_source(0, "missing-source")
+        view_model.set_route_target(0, "missing-target")
+        view_model.add_route_from_trace(
+            ScenarioTraceChoice.from_record(trace),
+            source,
+            logical_channel=1,
+            physical_channel=1,
+        )
+        view_model.remove_route(0)
+
+        self.assertEqual(original_body, view_model.draft.body)
         self.assertEqual("Scenarios 正在执行任务", view_model.status_message)
 
         release.set()

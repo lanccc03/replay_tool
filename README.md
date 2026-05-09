@@ -56,14 +56,16 @@ theme, navigation, top status bar, inspector panel, async busy/error feedback,
 and workspace-backed pages. Trace Library supports Import ASC, Inspect,
 Rebuild Cache, Delete Trace, and Refresh through the application layer.
 Scenarios can list saved records and load a saved schema v2 scenario into a
-read-only editor preview with Overview, Traces & Devices, Routes, and JSON tabs.
+draft editor with Overview, Traces & Devices, Routes, and JSON tabs. The editor
+supports creating a mock scenario from imported traces, editing multiple routes,
+saving, validating, and deleting Scenario Store records.
 
 Replay Monitor, Devices, and Settings are still structured placeholders.
-Scenario editing / save / validate / run from the UI, hardware enumeration,
-DBC / Signal Override, diagnostics, DoIP, ZLG, BLF, high DPI checks, and
-Windows hardware UI validation are not implemented or not verified yet. See
-[`docs/ui-implementation-roadmap.md`](docs/ui-implementation-roadmap.md) for
-the current UI milestone status.
+Scenario Run from the UI, hardware enumeration, real device target selection,
+DBC / Signal Override, diagnostics, DoIP, ZLG, BLF, high DPI checks, and Windows
+hardware UI validation are not implemented or not verified yet. See
+[`docs/ui-implementation-roadmap.md`](docs/ui-implementation-roadmap.md) for the
+current UI milestone status.
 
 ### CLI usage
 
