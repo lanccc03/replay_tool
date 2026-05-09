@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tool UI Style"
+  short_description: "Reusable guidance for internal tool UIs"
+  default_prompt: "Use $tool-ui-style to design or review this internal tool UI."

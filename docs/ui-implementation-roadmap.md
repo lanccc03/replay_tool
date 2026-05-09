@@ -1,6 +1,6 @@
 # next_replay UI 实现路线图
 
-本文记录 `next_replay` 从当前 PySide6 工程工作台走向完整工程 UI 的长期实现路线。它用于指导 UI 进度规划、阶段验收和后续工程代理接手，不替代 `docs/ui-style-guide.md` 的视觉规则，也不替代复杂功能所需的 ExecPlan。
+本文记录 `next_replay` 从当前 PySide6 工程工作台走向完整工程 UI 的长期实现路线。它用于指导 UI 进度规划、阶段验收和后续工程代理接手，不替代 `docs/ui-style-guide.md` 的项目专属 UI 补充规则、`.codex/skills/tool-ui-style` 的通用工具 UI 风格，也不替代复杂功能所需的 ExecPlan。
 
 当前基线：
 
@@ -436,7 +436,7 @@ M8 产品化验证基线仍在推进：
 - 涉及复杂功能、显著重构或高风险迁移时，按 `.agents/PLANS.md` 编写 ExecPlan。
 - 新增或修改 UI 类时，必须维护类级 docstring。
 - 新增或修改公共函数 / 方法时，必须维护 Google 风格 docstring。
-- UI 文案、颜色、布局和状态表达必须遵守 `docs/ui-style-guide.md`。
+- UI 文案、颜色、布局和状态表达必须同时遵守 `.codex/skills/tool-ui-style` 和 `docs/ui-style-guide.md`。
 - 架构边界变更必须同步 `docs/architecture-design-guide.md`。
 
 ## 5. 验证要求

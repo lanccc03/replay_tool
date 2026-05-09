@@ -1,0 +1,78 @@
+<h2>Current Scenarios Page Structure</h2>
+<p class="subtitle">PySide6 desktop app — QStackedWidget navigation</p>
+
+<div class="mockup">
+  <div class="mockup-header">Current: Scenarios Page (Split View)</div>
+  <div class="mockup-body">
+    <div style="display: flex; gap: 12px; min-height: 400px;">
+      <!-- Sidebar -->
+      <div style="width: 160px; background: #1e1e2e; border-radius: 8px; padding: 12px; color: #cdd6f4;">
+        <div style="font-size: 12px; color: #a6adc8; margin-bottom: 12px;">NAVIGATION</div>
+        <div style="padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;">Trace Library</div>
+        <div style="padding: 6px 8px; border-radius: 4px; background: #585b70; margin-bottom: 4px; font-weight: bold;">Scenarios</div>
+        <div style="padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;">Replay Monitor</div>
+        <div style="padding: 6px 8px; border-radius: 4px;">Devices</div>
+      </div>
+
+      <!-- Main Content -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+        <!-- Top: Scenario List -->
+        <div style="flex: 1; background: #313244; border-radius: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: bold; color: #cdd6f4;">Saved Scenarios</span>
+            <button class="mock-button">+ New Scenario</button>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px; color: #bac2de;">
+            <tr style="border-bottom: 1px solid #45475a;"><th style="text-align: left; padding: 4px;">Name</th><th style="text-align: left; padding: 4px;">Traces</th><th style="text-align: left; padding: 4px;">Routes</th><th style="text-align: left; padding: 4px;">Updated</th></tr>
+            <tr><td style="padding: 4px;">replay-demo1</td><td style="padding: 4px;">3</td><td style="padding: 4px;">2</td><td style="padding: 4px;">2026-05-10</td></tr>
+            <tr><td style="padding: 4px;">replay-demo2</td><td style="padding: 4px;">1</td><td style="padding: 4px;">1</td><td style="padding: 4px;">2026-05-09</td></tr>
+          </table>
+        </div>
+
+        <!-- Bottom: Tabbed Editor -->
+        <div style="background: #313244; border-radius: 8px; padding: 12px;">
+          <div style="display: flex; gap: 4px; margin-bottom: 8px; font-size: 12px;">
+            <span style="padding: 4px 12px; background: #585b70; border-radius: 4px 4px 0 0; color: #cdd6f4;">Overview</span>
+            <span style="padding: 4px 12px; color: #6c7086;">Traces & Devices</span>
+            <span style="padding: 4px 12px; color: #6c7086;">Routes</span>
+            <span style="padding: 4px 12px; color: #6c7086;">JSON</span>
+          </div>
+          <div style="font-size: 12px; color: #6c7086;">[Tab content — editable fields for the selected scenario]</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 20px;">
+  <div class="mockup-header">Current: New Scenario Dialog (QDialog)</div>
+  <div class="mockup-body">
+    <div style="max-width: 420px; margin: 0 auto;">
+      <div style="background: #313244; border-radius: 8px; padding: 20px;">
+        <div style="font-weight: bold; margin-bottom: 16px; color: #cdd6f4;">New Scenario</div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #a6adc8; margin-bottom: 4px;">Scenario Name</div>
+          <input class="mock-input" style="width: 100%; box-sizing: border-box;" value="replay-my-trace">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #a6adc8; margin-bottom: 4px;">Trace</div>
+          <select style="width: 100%; padding: 8px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px;">
+            <option>demo1.asc (15000 frames)</option>
+            <option>demo2.asc (8000 frames)</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 12px; color: #a6adc8; margin-bottom: 4px;">Source</div>
+          <select style="width: 100%; padding: 8px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px;">
+            <option>CH0 CAN frames=15000</option>
+            <option>CH1 CAN frames=8000</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="mock-button" style="opacity: 0.6;">Cancel</button>
+          <button class="mock-button">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
