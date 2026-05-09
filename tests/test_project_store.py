@@ -9,7 +9,7 @@ import unittest
 import tests.bootstrap  # noqa: F401
 
 from replay_tool.app import ReplayApplication
-from replay_tool.domain import ReplayScenario
+from replay_tool.domain import ReplayScenario, ReplayState
 from replay_tool.storage import SqliteProjectStore
 
 
@@ -163,6 +163,24 @@ class ProjectStoreApplicationTests(unittest.TestCase):
         self.assertEqual("body-workflow", plan.name)
         self.assertEqual(1, plan.timeline_size)
         self.assertEqual("body-scenario", deleted.scenario_id)
+
+    def test_application_starts_non_blocking_replay_session_from_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+            trace = app.import_trace(ROOT / "examples" / "sample.asc")
+            payload = _scenario_payload("session-body", trace.trace_id)
+
+            session = app.start_replay_session_from_body(payload, base_dir=tmp)
+            completed = session.wait(timeout=2.0)
+            snapshot = session.snapshot()
+
+        self.assertTrue(session.started)
+        self.assertFalse(session.stopped_by_user)
+        self.assertTrue(completed)
+        self.assertEqual("session-body", session.summary.name)
+        self.assertEqual(ReplayState.STOPPED, snapshot.state)
+        self.assertGreater(snapshot.sent_frames, 0)
+        self.assertEqual((), snapshot.errors)
 
 
 if __name__ == "__main__":

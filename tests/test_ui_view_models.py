@@ -14,8 +14,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from replay_tool.app import ReplayApplication
-from replay_tool.domain import BusType, ChannelConfig, DeviceConfig
+from replay_tool.app import ReplayApplication, ReplaySessionSummary
+from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, ReplaySnapshot, ReplayState
 from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
@@ -27,6 +27,7 @@ from replay_tool.ports.trace_store import (
 )
 from replay_ui_qt.tasks import TaskRunner
 from replay_ui_qt.view_models.base import BaseViewModel
+from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 
@@ -232,6 +233,114 @@ class _ScenarioApp:
         return record
 
 
+class _FakeReplaySession:
+    def __init__(
+        self,
+        *,
+        summary: ReplaySessionSummary | None = None,
+        snapshot: ReplaySnapshot | None = None,
+    ) -> None:
+        self.summary = summary or ReplaySessionSummary(
+            name="demo",
+            timeline_size=4,
+            total_ts_ns=800,
+            device_count=1,
+            channel_count=1,
+            loop=False,
+        )
+        self.started = True
+        self.stopped_by_user = False
+        self._snapshot = snapshot or ReplaySnapshot(
+            state=ReplayState.RUNNING,
+            current_ts_ns=100,
+            total_ts_ns=self.summary.total_ts_ns,
+            timeline_index=1,
+            timeline_size=self.summary.timeline_size,
+            sent_frames=1,
+        )
+        self.paused = False
+        self.resumed = False
+        self.stopped = False
+
+    def snapshot(self) -> ReplaySnapshot:
+        return self._snapshot
+
+    def set_snapshot(self, snapshot: ReplaySnapshot) -> None:
+        self._snapshot = snapshot
+
+    def pause(self) -> None:
+        self.paused = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.PAUSED,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+            skipped_frames=self._snapshot.skipped_frames,
+            errors=self._snapshot.errors,
+            completed_loops=self._snapshot.completed_loops,
+        )
+
+    def resume(self) -> None:
+        self.resumed = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.RUNNING,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+            skipped_frames=self._snapshot.skipped_frames,
+            errors=self._snapshot.errors,
+            completed_loops=self._snapshot.completed_loops,
+        )
+
+    def stop(self) -> None:
+        self.stopped = True
+        self.stopped_by_user = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.STOPPED,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+            skipped_frames=self._snapshot.skipped_frames,
+            errors=self._snapshot.errors,
+            completed_loops=self._snapshot.completed_loops,
+        )
+
+    def wait(self, timeout: float | None = None) -> bool:
+        _ = timeout
+        return True
+
+
+class _ReplayApp:
+    def __init__(
+        self,
+        *,
+        session: _FakeReplaySession | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.session = session or _FakeReplaySession()
+        self.error = error
+        self.started_bodies: list[dict[str, object]] = []
+        self.base_dirs: list[Path] = []
+
+    def start_replay_session_from_body(
+        self,
+        body: dict[str, object],
+        *,
+        base_dir: str | Path = ".",
+    ) -> _FakeReplaySession:
+        self.started_bodies.append(dict(body))
+        self.base_dirs.append(Path(base_dir))
+        if self.error is not None:
+            raise self.error
+        return self.session
+
+
 def _scenario_body() -> dict[str, object]:
     return {
         "schema_version": 2,
@@ -344,6 +453,105 @@ class BaseViewModelTests(unittest.TestCase):
         self.assertFalse(view_model.busy)
         self.assertEqual("boom", view_model.error)
         self.assertEqual("执行失败", view_model.status_message)
+
+
+class ReplaySessionViewModelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication(["test-ui-replay-view-models"])
+
+    def test_start_records_session_summary_and_running_snapshot(self) -> None:
+        session = _FakeReplaySession()
+        replay_app = _ReplayApp(session=session)
+        view_model = ReplaySessionViewModel(replay_app, _runner(), poll_interval_ms=20)
+
+        accepted = view_model.start_scenario_body(_scenario_body(), base_dir="C:/data")
+        _wait_for(lambda: not view_model.busy, self._app)
+
+        self.assertTrue(accepted)
+        self.assertEqual([Path("C:/data")], replay_app.base_dirs)
+        self.assertEqual("demo", replay_app.started_bodies[0]["name"])
+        self.assertEqual("demo", view_model.scenario_name)
+        self.assertEqual("Running", view_model.display_state)
+        self.assertTrue(view_model.active)
+        self.assertEqual(1, view_model.sent_frames)
+        self.assertEqual(25.0, view_model.progress_percent)
+        self.assertTrue(view_model.can_pause)
+        self.assertFalse(view_model.can_resume)
+
+    def test_snapshot_polling_maps_completion_and_failure(self) -> None:
+        session = _FakeReplaySession()
+        view_model = ReplaySessionViewModel(_ReplayApp(session=session), _runner(), poll_interval_ms=20)
+        view_model.start_scenario_body(_scenario_body())
+        _wait_for(lambda: not view_model.busy, self._app)
+
+        session.set_snapshot(
+            ReplaySnapshot(
+                state=ReplayState.STOPPED,
+                current_ts_ns=800,
+                total_ts_ns=800,
+                timeline_index=4,
+                timeline_size=4,
+                sent_frames=4,
+            )
+        )
+        view_model.refresh_snapshot()
+
+        self.assertEqual("Completed", view_model.display_state)
+        self.assertFalse(view_model.active)
+        self.assertEqual(100.0, view_model.progress_percent)
+
+        session.set_snapshot(
+            ReplaySnapshot(
+                state=ReplayState.STOPPED,
+                timeline_index=2,
+                timeline_size=4,
+                errors=("boom",),
+            )
+        )
+        view_model.refresh_snapshot()
+
+        self.assertEqual("Failed", view_model.display_state)
+        self.assertEqual("boom", view_model.error_text)
+
+    def test_pause_resume_and_stop_delegate_to_session(self) -> None:
+        session = _FakeReplaySession()
+        view_model = ReplaySessionViewModel(_ReplayApp(session=session), _runner(), poll_interval_ms=20)
+        view_model.start_scenario_body(_scenario_body())
+        _wait_for(lambda: not view_model.busy, self._app)
+
+        view_model.pause()
+        self.assertTrue(session.paused)
+        self.assertEqual("Paused", view_model.display_state)
+        self.assertTrue(view_model.can_resume)
+
+        view_model.resume()
+        self.assertTrue(session.resumed)
+        self.assertEqual("Running", view_model.display_state)
+
+        accepted = view_model.stop()
+        _wait_for(lambda: not view_model.busy, self._app)
+
+        self.assertTrue(accepted)
+        self.assertTrue(session.stopped)
+        self.assertTrue(session.stopped_by_user)
+        self.assertEqual("Stopped", view_model.display_state)
+        self.assertFalse(view_model.active)
+
+    def test_start_failure_reports_error_without_active_session(self) -> None:
+        view_model = ReplaySessionViewModel(
+            _ReplayApp(error=RuntimeError("compile failed")),
+            _runner(),
+            poll_interval_ms=20,
+        )
+
+        view_model.start_scenario_body(_scenario_body())
+        _wait_for(lambda: not view_model.busy, self._app)
+
+        self.assertEqual("compile failed", view_model.error)
+        self.assertEqual("Stopped", view_model.display_state)
+        self.assertFalse(view_model.active)
+        self.assertIsNone(view_model.session)
 
 
 class TraceLibraryViewModelTests(unittest.TestCase):

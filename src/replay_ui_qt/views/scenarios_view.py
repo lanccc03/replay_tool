@@ -46,6 +46,7 @@ class ScenariosView(QWidget):
     """Scenarios page with a read-only table of saved schema v2 scenarios."""
 
     inspectorChanged = Signal(str, str)
+    runRequested = Signal(object, str)
 
     def __init__(self, view_model: ScenariosViewModel) -> None:
         """Create the Scenarios view.
@@ -55,6 +56,7 @@ class ScenariosView(QWidget):
         """
         super().__init__()
         self._view_model = view_model
+        self._replay_active = False
         self._model = ObjectTableModel(
             (
                 TableColumn("名称", lambda row: row.name),
@@ -166,7 +168,7 @@ class ScenariosView(QWidget):
         """Return whether Run is enabled.
 
         Returns:
-            Always False in the read-only M3 first batch.
+            True when a loaded draft can start a replay session.
         """
         return self._run_button.isEnabled()
 
@@ -332,6 +334,18 @@ class ScenariosView(QWidget):
             self._routes_table.selectRow(row)
             self._sync_edit_controls_for_current_route()
 
+    def set_replay_active(self, active: bool) -> None:
+        """Set whether an active replay session should lock editor commands.
+
+        Args:
+            active: True while replay is starting, running, paused, or stopping.
+        """
+        value = bool(active)
+        if self._replay_active == value:
+            return
+        self._replay_active = value
+        self._sync_command_buttons()
+
     def create_new_dialog(self):
         """Create a New Scenario dialog from current trace choices.
 
@@ -360,6 +374,10 @@ class ScenariosView(QWidget):
             summary="Scenarios 操作失败",
             detail=self._view_model.error,
         )
+
+    def trigger_run(self) -> None:
+        """Trigger Run for tests and keyboard workflows."""
+        self._run_loaded_scenario()
 
     def create_delete_confirmation_dialog(self):
         """Create the delete confirmation dialog for the selected scenario.
@@ -411,7 +429,8 @@ class ScenariosView(QWidget):
         toolbar.addWidget(self._validate_button)
         self._run_button = QPushButton("Run")
         self._run_button.setEnabled(False)
-        self._run_button.setToolTip("M4 Replay Monitor 接入后启用")
+        self._run_button.setToolTip("运行当前 Scenario draft，并在 Replay Monitor 中查看 snapshot")
+        self._run_button.clicked.connect(self._run_loaded_scenario)
         toolbar.addWidget(self._run_button)
         self._delete_button = QPushButton("Delete")
         self._delete_button.setEnabled(False)
@@ -465,7 +484,8 @@ class ScenariosView(QWidget):
             self.inspectorChanged.emit("Scenarios 错误", message)
 
     def _sync_busy(self, busy: bool) -> None:
-        self._new_button.setEnabled(not busy)
+        idle = not busy and not self._replay_active
+        self._new_button.setEnabled(idle)
         self._refresh_button.setEnabled(not busy)
         self._sync_command_buttons()
         self._sync_status_badge()
@@ -590,12 +610,16 @@ class ScenariosView(QWidget):
         self._emit_selection()
 
     def _load_selected_scenario(self) -> None:
+        if self._replay_active:
+            return
         row = self._selected_row()
         if row is None:
             return
         self._view_model.load_scenario(row.scenario_id)
 
     def _start_new_scenario(self) -> None:
+        if self._replay_active:
+            return
         if not self._view_model.trace_choices:
             self._open_new_dialog_after_trace_load = True
             self._view_model.load_trace_choices()
@@ -610,7 +634,7 @@ class ScenariosView(QWidget):
                 self._view_model.create_new_scenario_from_trace(trace, source, name=name)
 
     def _start_add_route(self) -> None:
-        if self._view_model.draft is None:
+        if self._replay_active or self._view_model.draft is None:
             return
         if not self._view_model.trace_choices:
             self._open_add_route_dialog_after_trace_load = True
@@ -631,17 +655,33 @@ class ScenariosView(QWidget):
                 )
 
     def _remove_selected_route(self) -> None:
+        if self._replay_active:
+            return
         index = self._selected_route_index()
         if index >= 0:
             self._view_model.remove_route(index)
 
     def _save_loaded_scenario(self) -> None:
+        if self._replay_active:
+            return
         self._view_model.save_loaded_scenario()
 
     def _validate_loaded_scenario(self) -> None:
+        if self._replay_active:
+            return
         self._view_model.validate_loaded_scenario()
 
+    def _run_loaded_scenario(self) -> None:
+        if self._replay_active:
+            return
+        draft = self._view_model.draft
+        if draft is None or self._view_model.draft_issues:
+            return
+        self.runRequested.emit(dict(draft.body), draft.base_dir)
+
     def _delete_selected_scenario(self) -> None:
+        if self._replay_active:
+            return
         row = self._selected_row()
         if row is None:
             return
@@ -654,7 +694,7 @@ class ScenariosView(QWidget):
         has_draft = self._view_model.draft is not None
         route_index = self._selected_route_index()
         has_route = has_draft and route_index >= 0
-        idle = not self._view_model.busy
+        idle = not self._view_model.busy and not self._replay_active
         self._new_button.setEnabled(idle)
         self._load_button.setEnabled(row is not None and idle)
         self._save_button.setEnabled(has_draft and idle)
@@ -662,11 +702,13 @@ class ScenariosView(QWidget):
         self._delete_button.setEnabled(row is not None and idle)
         self._add_route_button.setEnabled(has_draft and idle)
         self._remove_route_button.setEnabled(has_route and idle)
+        self._name_edit.setEnabled(has_draft and idle)
+        self._loop_check.setEnabled(has_draft and idle)
         self._route_source_combo.setEnabled(has_route and idle)
         self._route_logical_spin.setEnabled(has_route and idle)
         self._route_target_combo.setEnabled(has_route and idle)
         self._target_physical_spin.setEnabled(has_route and idle)
-        self._run_button.setEnabled(False)
+        self._run_button.setEnabled(has_draft and not self._view_model.draft_issues and idle)
 
     def _sync_draft(self) -> None:
         draft = self._view_model.draft
@@ -769,23 +811,31 @@ class ScenariosView(QWidget):
         self._sync_command_buttons()
 
     def _apply_name_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         value = self._name_edit.text()
         if draft is not None and value != draft.name:
             self._view_model.rename_loaded_scenario(value)
 
     def _apply_loop_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         if draft is not None:
             self._view_model.set_timeline_loop(self._loop_check.isChecked())
 
     def _apply_route_logical_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         route_index = self._selected_route_index()
         if draft is not None and route_index >= 0:
             self._view_model.set_route_logical_channel(route_index, self._route_logical_spin.value())
 
     def _apply_route_source_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         route_index = self._selected_route_index()
         source_id = self._route_source_combo.currentData()
@@ -793,6 +843,8 @@ class ScenariosView(QWidget):
             self._view_model.set_route_source(route_index, str(source_id))
 
     def _apply_route_target_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         route_index = self._selected_route_index()
         target_id = self._route_target_combo.currentData()
@@ -800,6 +852,8 @@ class ScenariosView(QWidget):
             self._view_model.set_route_target(route_index, str(target_id))
 
     def _apply_target_physical_edit(self) -> None:
+        if self._replay_active:
+            return
         draft = self._view_model.draft
         target_index = self._selected_route_target_index()
         if draft is not None and target_index >= 0:

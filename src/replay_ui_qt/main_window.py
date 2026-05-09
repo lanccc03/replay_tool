@@ -95,10 +95,17 @@ class MainWindow(QMainWindow):
         trace_view_model.statusMessageChanged.connect(self._context.set_status_message)
         scenario_view_model = ScenariosViewModel(self._context.application, self._context.task_runner)
         scenario_view_model.statusMessageChanged.connect(self._context.set_status_message)
+        replay_view_model = ReplaySessionViewModel(self._context.application, self._context.task_runner)
+        replay_view_model.statusMessageChanged.connect(self._context.set_status_message)
+        replay_view_model.displayStateChanged.connect(self._context.set_runtime_state)
 
         trace_view = TraceLibraryView(trace_view_model)
         scenario_view = ScenariosView(scenario_view_model)
-        replay_view = ReplayMonitorView(ReplaySessionViewModel())
+        replay_view = ReplayMonitorView(replay_view_model)
+        scenario_view.runRequested.connect(
+            lambda body, base_dir: self._start_replay_from_scenario(replay_view_model, body, base_dir)
+        )
+        replay_view_model.activeChanged.connect(scenario_view.set_replay_active)
         devices_view = DevicesView()
         settings_view = SettingsView(self._context)
 
@@ -129,3 +136,21 @@ class MainWindow(QMainWindow):
     def _handle_inspector_changed(self, page: QWidget, title: str, body: str) -> None:
         if self._stack.currentWidget() is page:
             self._inspector.set_content(title, body)
+
+    def _start_replay_from_scenario(
+        self,
+        view_model: ReplaySessionViewModel,
+        body: object,
+        base_dir: str,
+    ) -> None:
+        if not isinstance(body, dict):
+            return
+        accepted = view_model.start_scenario_body(body, base_dir=base_dir)
+        if accepted:
+            self._show_page_by_label("Replay Monitor")
+
+    def _show_page_by_label(self, label: str) -> None:
+        for index, (page_label, _page) in enumerate(self._pages):
+            if page_label == label:
+                self._navigation.set_current_index(index)
+                return

@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from replay_tool.adapters.mock import MockDevice
 from replay_tool.adapters.tongxing import TongxingDevice
+from replay_tool.app.session import ReplaySession
 from replay_tool.domain import DeviceConfig, ReplayScenario, TraceConfig
 from replay_tool.planning import ReplayPlan, ReplayPlanner
 from replay_tool.ports.project_store import ProjectStore, ScenarioRecord
@@ -134,6 +135,41 @@ class ReplayApplication:
         runtime.start()
         runtime.wait()
         return runtime
+
+    def start_replay_session_from_body(
+        self,
+        body: dict[str, Any],
+        *,
+        base_dir: str | Path = ".",
+    ) -> ReplaySession:
+        """Compile and start a non-blocking replay session from a scenario body.
+
+        Args:
+            body: Parsed schema v2 scenario mapping.
+            base_dir: Directory used to resolve relative trace paths.
+
+        Returns:
+            Started replay session handle. The caller can poll snapshots and
+            pause, resume, or stop the session through app-layer methods.
+
+        Raises:
+            ValueError: If the scenario body is invalid or references an
+                unsupported trace format.
+            FileNotFoundError: If a referenced trace path or ID cannot be
+                resolved through the workspace.
+            RuntimeError: If runtime configuration or startup fails.
+        """
+        plan = self.validate_scenario_body(body, base_dir=base_dir)
+        runtime = ReplayRuntime(
+            self.registry,
+            logger=self.logger,
+            trace_store=self.trace_store,
+        )
+        runtime.configure(plan)
+        session = ReplaySession(runtime=runtime, plan=plan)
+        runtime.start()
+        session.mark_started()
+        return session
 
     def save_scenario(self, scenario_path: str | Path, *, scenario_id: str | None = None) -> ScenarioRecord:
         """Save a schema v2 scenario file into the project store.

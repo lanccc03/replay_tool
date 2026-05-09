@@ -13,7 +13,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from replay_tool.domain import BusType, ChannelConfig, DeviceConfig
+from replay_tool.app import ReplaySessionSummary
+from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, ReplaySnapshot, ReplayState
 from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
@@ -24,8 +25,10 @@ from replay_tool.ports.trace_store import (
     TraceSourceSummary,
 )
 from replay_ui_qt.tasks import TaskRunner
+from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioSourceChoice, ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
+from replay_ui_qt.views.placeholders import ReplayMonitorView
 from replay_ui_qt.views.scenarios_view import ScenariosView
 from replay_ui_qt.views.trace_library_view import TraceLibraryView
 
@@ -152,6 +155,92 @@ class _ScenarioApp:
             raise KeyError(scenario_id)
         self.records = [item for item in self.records if item.scenario_id != scenario_id]
         return record
+
+
+class _FakeReplaySession:
+    def __init__(
+        self,
+        *,
+        summary: ReplaySessionSummary | None = None,
+        snapshot: ReplaySnapshot | None = None,
+    ) -> None:
+        self.summary = summary or ReplaySessionSummary(
+            name="demo-scenario",
+            timeline_size=4,
+            total_ts_ns=800,
+            device_count=1,
+            channel_count=1,
+            loop=False,
+        )
+        self.started = True
+        self.stopped_by_user = False
+        self._snapshot = snapshot or ReplaySnapshot(
+            state=ReplayState.RUNNING,
+            current_ts_ns=200,
+            total_ts_ns=800,
+            timeline_index=1,
+            timeline_size=4,
+            sent_frames=1,
+        )
+        self.paused = False
+        self.resumed = False
+        self.stopped = False
+
+    def snapshot(self) -> ReplaySnapshot:
+        return self._snapshot
+
+    def set_snapshot(self, snapshot: ReplaySnapshot) -> None:
+        self._snapshot = snapshot
+
+    def pause(self) -> None:
+        self.paused = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.PAUSED,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+        )
+
+    def resume(self) -> None:
+        self.resumed = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.RUNNING,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+        )
+
+    def stop(self) -> None:
+        self.stopped = True
+        self.stopped_by_user = True
+        self._snapshot = ReplaySnapshot(
+            state=ReplayState.STOPPED,
+            current_ts_ns=self._snapshot.current_ts_ns,
+            total_ts_ns=self._snapshot.total_ts_ns,
+            timeline_index=self._snapshot.timeline_index,
+            timeline_size=self._snapshot.timeline_size,
+            sent_frames=self._snapshot.sent_frames,
+        )
+
+
+class _ReplayApp:
+    def __init__(self, session: _FakeReplaySession | None = None) -> None:
+        self.session = session or _FakeReplaySession()
+        self.started_bodies: list[dict[str, object]] = []
+
+    def start_replay_session_from_body(
+        self,
+        body: dict[str, object],
+        *,
+        base_dir: str | Path = ".",
+    ) -> _FakeReplaySession:
+        _ = base_dir
+        self.started_bodies.append(dict(body))
+        return self.session
 
 
 def _runner() -> TaskRunner:
@@ -369,6 +458,87 @@ class TraceLibraryViewTests(unittest.TestCase):
             self._app.processEvents()
 
 
+class ReplayMonitorViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication(["test-ui-replay-monitor-view"])
+
+    def test_monitor_renders_running_snapshot_and_controls(self) -> None:
+        session = _FakeReplaySession()
+        view_model = ReplaySessionViewModel(_ReplayApp(session), _runner(), poll_interval_ms=20)
+        view = ReplayMonitorView(view_model)
+        try:
+            view_model.start_scenario_body(_scenario_body())
+            _wait_for(lambda: not view_model.busy and view.state_text() == "Running", self._app)
+
+            self.assertEqual("Running", view.state_text())
+            self.assertEqual(25, view.progress_value())
+            self.assertEqual("1/4", view.metric_text("Timeline"))
+            self.assertEqual("1", view.metric_text("Sent frames"))
+            self.assertTrue(view.pause_enabled())
+            self.assertFalse(view.resume_enabled())
+            self.assertTrue(view.stop_enabled())
+
+            view_model.pause()
+            self.assertEqual("Paused", view.state_text())
+            self.assertFalse(view.pause_enabled())
+            self.assertTrue(view.resume_enabled())
+
+            dialog = view.create_stop_confirmation_dialog()
+            try:
+                self.assertIn("Stop Replay", dialog.text())
+                self.assertIn("demo-scenario", dialog.informativeText())
+            finally:
+                dialog.close()
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_monitor_renders_completion_and_error_details(self) -> None:
+        session = _FakeReplaySession()
+        view_model = ReplaySessionViewModel(_ReplayApp(session), _runner(), poll_interval_ms=20)
+        view = ReplayMonitorView(view_model)
+        try:
+            view_model.start_scenario_body(_scenario_body())
+            _wait_for(lambda: not view_model.busy, self._app)
+            session.set_snapshot(
+                ReplaySnapshot(
+                    state=ReplayState.STOPPED,
+                    current_ts_ns=800,
+                    total_ts_ns=800,
+                    timeline_index=4,
+                    timeline_size=4,
+                    sent_frames=4,
+                )
+            )
+            view_model.refresh_snapshot()
+
+            self.assertEqual("Completed", view.state_text())
+            self.assertEqual(100, view.progress_value())
+            self.assertFalse(view.stop_enabled())
+
+            session.set_snapshot(
+                ReplaySnapshot(
+                    state=ReplayState.STOPPED,
+                    timeline_index=2,
+                    timeline_size=4,
+                    errors=("runtime failed",),
+                )
+            )
+            view_model.refresh_snapshot()
+
+            self.assertEqual("Failed", view.state_text())
+            self.assertTrue(view.error_details_enabled())
+            dialog = view.create_error_dialog()
+            try:
+                self.assertIn("runtime failed", dialog.detail_text())
+            finally:
+                dialog.close()
+        finally:
+            view.close()
+            self._app.processEvents()
+
+
 class ScenariosViewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -432,10 +602,46 @@ class ScenariosViewTests(unittest.TestCase):
 
             self.assertTrue(view.save_enabled())
             self.assertTrue(view.validate_enabled())
-            self.assertFalse(view.run_enabled())
+            self.assertTrue(view.run_enabled())
             self.assertTrue(view.delete_enabled())
             self.assertTrue(view.add_route_enabled())
             self.assertTrue(view.remove_route_enabled())
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_run_signal_and_active_replay_lock_editor_commands(self) -> None:
+        view_model = ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner())
+        view = ScenariosView(view_model)
+        emitted: list[tuple[dict[str, object], str]] = []
+        view.runRequested.connect(lambda body, base_dir: emitted.append((dict(body), str(base_dir))))
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+            self.assertTrue(view.run_enabled())
+            view.trigger_run()
+
+            self.assertEqual(1, len(emitted))
+            self.assertEqual("demo-scenario", emitted[0][0]["name"])
+            self.assertEqual("C:/data", emitted[0][1])
+
+            view.set_replay_active(True)
+            before = view.json_preview_text()
+
+            self.assertFalse(view.save_enabled())
+            self.assertFalse(view.validate_enabled())
+            self.assertFalse(view.run_enabled())
+            self.assertFalse(view.add_route_enabled())
+            self.assertFalse(view.remove_route_enabled())
+
+            view.edit_overview_name("blocked-edit")
+            self.assertEqual(before, view.json_preview_text())
+
+            view.set_replay_active(False)
+            self.assertTrue(view.run_enabled())
         finally:
             view.close()
             self._app.processEvents()
@@ -565,7 +771,7 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertIn("trace1 / CH0 CANFD -> 4 -> mock0 / CH2 CANFD", view.routes_preview_text())
             self.assertIn('"name": "edited-scenario"', view.json_preview_text())
             self.assertIn('"loop": true', view.json_preview_text())
-            self.assertFalse(view.run_enabled())
+            self.assertTrue(view.run_enabled())
         finally:
             view.close()
             self._app.processEvents()
@@ -604,7 +810,7 @@ class ScenariosViewTests(unittest.TestCase):
                 self.assertIn('"target": "mock0-ch1-canfd"', view.json_preview_text())
                 self.assertIn('"logical_channel": 5', view.json_preview_text())
                 self.assertTrue(view.remove_route_enabled())
-                self.assertFalse(view.run_enabled())
+                self.assertTrue(view.run_enabled())
             finally:
                 view.close()
                 self._app.processEvents()

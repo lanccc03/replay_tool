@@ -9,8 +9,9 @@
 - M1 异步任务、busy / error / status badge、危险确认和错误详情底座已接入。
 - Trace Library 已完成 Import ASC、Inspect、Rebuild Cache、Delete Trace 和 Refresh 工作流。
 - Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为可编辑 draft，支持新建最小 draft、多 route 编辑、保存、校验和删除。
-- Replay Monitor、Devices 和 Settings 仍是结构化占位。
-- Scenario Editor 的真实设备 target 选择、完整字段就近错误提示、UI Run、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
+- Replay Monitor 已接入第一批非阻塞 Mock replay session：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
+- Devices 和 Settings 仍是结构化占位。
+- Scenario Editor 的真实设备 target 选择、完整字段就近错误提示、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
 
 ## 1. 实现原则
 
@@ -42,7 +43,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
 | M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 多 route draft 编辑、保存、Validate 已接入；Run 待 M4 |
-| M4 Replay Monitor 运行会话闭环 | `Planned` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | Mock scenario 可从 UI 运行到完成 |
+| M4 Replay Monitor 运行会话闭环 | `In Progress` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | 第一批已支持 Mock draft 从 UI 运行到完成 |
 | M5 Devices 设备枚举与配置闭环 | `Planned` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | fake/Mock 自动化通过；同星 UI 真机验证有手工记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
 | M7 Diagnostics UI | `Blocked` | CAN ISO-TP / UDS / DoIP 诊断动作界面 | DiagnosticClient port、diagnostic timeline item | 诊断动作进入 ReplayPlan 并由 runtime 分发 |
@@ -255,7 +256,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M4：Replay Monitor 运行会话闭环
 
-状态：`Planned`
+状态：`In Progress`
 
 目标：
 
@@ -273,6 +274,15 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - current timestamp、total duration、progress、sent frames、skipped frames、errors、completed loops。
 - runtime error panel，可复制错误文本。
 - 运行期间锁定关键 scenario、route、device 配置。
+
+第一批已交付：
+
+- `ReplayApplication.start_replay_session_from_body()` 已提供 app 层非阻塞 replay session API，保留 CLI / app 现有阻塞式 `run()`。
+- Scenarios 页面 Run 当前 draft 后会切换到 Replay Monitor，并在运行期间锁定 Save、Validate、Run、route 编辑等关键配置入口。
+- Replay Monitor 已显示 scenario、UI 派生状态、progress、timeline cursor、timestamp、sent / skipped frames、errors 和 completed loops。
+- Replay Monitor 已通过 app 层 session handle 提供 Pause / Resume / Stop；UI 不直接 import 或操作 `ReplayRuntime`。
+- runtime error panel 已提供可复制错误详情；Stop 带确认对话框。
+- 本批仅覆盖 Mock / app 层 session 和 offscreen UI 自动化；真实窗口点击、高 DPI 和 Windows 同星真机 UI 验证未执行。
 
 验收标准：
 
