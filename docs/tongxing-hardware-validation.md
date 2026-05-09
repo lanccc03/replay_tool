@@ -108,12 +108,70 @@
 - project_path：
 - fallback 后是否成功：
 
+## PySide6 UI 验证：Devices 与 Replay Monitor
+
+本节用于记录 UI 层的真机点击验证。自动化 offscreen 测试只能证明 mock / app 层路径，不等同于真实窗口、高 DPI 或同星硬件 UI 验证。
+
+启动 UI：
+
+    uv run replay-ui --workspace .replay_tool
+
+Devices 页面枚举步骤：
+
+- 打开 Devices。
+- Driver 选择 `tongxing`。
+- SDK root 填 `TSMaster/Windows`。
+- Application 填 `ReplayTool`。
+- Device type 填 `TC1014`。
+- Device index 填 `0`。
+- 点击 Enumerate。
+
+期望：
+
+- UI 不冻结。
+- 状态变为 Ready 或显示可复制错误。
+- 成功时 summary 包含同星设备名、serial number、channel count。
+- channels 表至少包含待测物理通道。
+- 若失败，记录错误详情和 TSMaster / 设备连接状态。
+
+Scenario 到 Replay Monitor 真机运行步骤：
+
+- 在 Trace Library 导入用于真机发送的 ASC。
+- 在 Scenarios 新建或加载 schema v2 scenario。
+- 将 device driver 改为 `tongxing`，确认 SDK root、application、device type 和 device index。
+- 确认 target 的 bus、physical channel、nominal baud、data baud、resistance、listen only、tx echo 与接线一致。
+- 点击 Validate，确认通过。
+- 点击 Run，切换到 Replay Monitor 后观察 Running / Completed、progress、sent / skipped frames、errors。
+- 必要时测试 Pause / Resume / Stop。
+
+期望：
+
+- Run 期间 Scenarios 的关键 route / device / target 编辑入口被锁定。
+- Replay Monitor 最终显示 Completed，sent frames 与预期 trace source frame count 一致，errors 为 0。
+- Stop 时设备释放，重复运行仍能成功。
+- 外部总线监视器或 TSMaster 录制端能看到预期帧；若 Codex 无法观察外部监视器，必须标明“未由 Codex 观测”。
+
+记录：
+
+- 日期：
+- 被测分支 / commit：
+- Windows 缩放：100% / 125% / 150%
+- Devices UI 枚举：通过 / 未通过 / 未验证
+- Scenario UI 真机 Run：通过 / 未通过 / 未验证
+- Pause / Resume / Stop：通过 / 未通过 / 未验证
+- 高 DPI 文字重叠 / 截断：无 / 有 / 未验证
+- 输出或错误详情：
+- 外部总线监视器截图 / 记录：
+
 ## 结论
 
 - 设备枚举：通过 / 未通过
 - CANFD 发送：通过 / 未通过
 - 多通道：通过 / 未通过 / 未验证
 - project_path fallback：通过 / 未通过 / 未验证
+- Devices UI 枚举：通过 / 未通过 / 未验证
+- Scenario UI 真机 Run：通过 / 未通过 / 未验证
+- 高 DPI UI 检查：通过 / 未通过 / 未验证
 - 仍需跟进的问题：
 
 ## 2026-04-29 实测记录
@@ -214,4 +272,23 @@
 - FIFO 真机读取：未验证；fake TSMaster 自动化测试覆盖四通道 FIFO 读取路径。
 - project_path fallback：本轮直接映射成功，未触发手工 fallback；fake TSMaster 自动化测试覆盖 fallback 逻辑。
 - DBC / DoIP / ZLG / Signal Override / Diagnostics：本轮未实现、未验证。
-- Replay Monitor、Devices 真机 UI 点击和高 DPI：本轮未验证；当前 PySide6 UI 的 Trace Library 和 Scenario 只读 preview 不等同于同星真机 UI 验证。
+- Replay Monitor、Devices 真机 UI 点击和高 DPI：本轮未验证；2026-04-29 当时的 PySide6 UI 自动化覆盖不等同于同星真机 UI 验证。
+
+## 2026-05-09 UI M4/M5 自动化收口记录
+
+本节记录 M4 Replay Monitor 和 M5 Devices 的 mock / app 层自动化收口。未执行真实窗口点击、高 DPI 或 Windows 同星真机 UI 验证。
+
+自动化新增覆盖：
+
+- `ReplayApplication + ReplaySessionViewModel` 使用导入的 `examples/sample.asc` 启动 mock replay session，轮询到 Completed，并校验 sent / skipped counters 与 active lock 释放。
+- `ReplayApplication + ReplaySessionViewModel` 启动失败路径显示错误、保持 Stopped，并且不留下 active session。
+- `ReplayApplication + DevicesViewModel` 使用 mock driver 枚举 device info、capabilities、health 和 channel rows。
+
+结论：
+
+- Replay Monitor mock / app 层自动化：通过。
+- Devices mock / app 层自动化：通过。
+- Devices 同星真机 UI 枚举：未验证。
+- Scenario 同星真机 UI Run：未验证。
+- 真实窗口点击：未验证。
+- 高 DPI：未验证。

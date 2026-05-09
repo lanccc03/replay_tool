@@ -58,7 +58,7 @@ replay_adapters/    -> replay_tool/adapters/
 replay_storage/     -> replay_tool/storage/
 replay_app/         -> replay_tool/app/
 replay_cli/         -> replay_tool/cli.py
-replay_ui_qt/       -> replay_ui_qt/（PySide6 工作台：Trace Library 已闭环，Scenario Editor 只读底座进行中）
+replay_ui_qt/       -> replay_ui_qt/（PySide6 工作台：Trace Library、Scenario Editor、Replay Monitor 和 Devices 的 mock / app 层闭环已具备）
 ```
 
 ## 3. 架构类型
@@ -534,7 +534,7 @@ domain/diagnostics.py
 
 ## 9. UI 设计原则
 
-UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流、Scenario Store 可视化 draft 编辑 / 保存 / 校验 / 运行、Replay Monitor 第一批非阻塞 Mock session 控制，以及 Devices 第一批 app 层枚举工作流。Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
+UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流、Scenario Store 可视化 draft 编辑 / 保存 / 校验 / 运行、Replay Monitor 非阻塞 Mock session 控制，以及 Devices mock / app 层枚举工作流。Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
 
 当前 / 建议结构：
 
@@ -717,8 +717,8 @@ replay-tool delete-scenario <scenario-id>
 
 - 壳层、主题、导航、异步任务、Trace Library 完整工作流。（已具备）
 - Scenario Editor schema v2 draft preview、可编辑保存、Validate、Run、Delete、device / target / route 编辑闭环。（已具备）
-- replay monitor view 第一批非阻塞 Mock session 控制。（已具备）
-- devices view 的 app 层枚举和配置闭环。（已具备第一批）
+- replay monitor view 非阻塞 Mock session 控制和自动化收口。（已具备）
+- devices view 的 app 层枚举和配置闭环及 mock 自动化收口。（已具备）
 - signal override view。
 - diagnostics view。
 - 高 DPI、真实窗口点击和 Windows 硬件 UI 验证记录。
@@ -730,7 +730,7 @@ replay-tool delete-scenario <scenario-id>
 已经具备：
 
 - headless CLI。
-- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表、schema v2 draft 可视化编辑 / 保存 / Validate / Run、Replay Monitor 第一批非阻塞 Mock session 控制、Devices 第一批 app 层枚举页面，以及 Settings 占位页。
+- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表、schema v2 draft 可视化编辑 / 保存 / Validate / Run、Replay Monitor 非阻塞 Mock session 控制、Devices mock / app 层枚举页面，以及 Settings 占位页。
 - domain / planning / runtime / ports / adapters / storage / app 分层。
 - Mock 回放。
 - 同星 adapter。

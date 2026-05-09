@@ -387,6 +387,33 @@ def _scenario_body() -> dict[str, object]:
     }
 
 
+def _scenario_body_from_trace(record: TraceRecord, source: TraceSourceSummary) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "name": "ui-real-app-mock-replay",
+        "traces": [{"id": "trace1", "path": record.trace_id}],
+        "devices": [{"id": "mock0", "driver": "mock"}],
+        "sources": [
+            {
+                "id": "source0",
+                "trace": "trace1",
+                "channel": int(source.source_channel),
+                "bus": source.bus.value,
+            }
+        ],
+        "targets": [
+            {
+                "id": "target0",
+                "device": "mock0",
+                "physical_channel": 0,
+                "bus": source.bus.value,
+            }
+        ],
+        "routes": [{"logical_channel": 0, "source": "source0", "target": "target0"}],
+        "timeline": {"loop": False},
+    }
+
+
 def _scenario_record(body: dict[str, object] | None = None, *, scenario_id: str = "scenario-1") -> ScenarioRecord:
     payload = body if body is not None else _scenario_body()
     return ScenarioRecord(
@@ -562,6 +589,25 @@ class DevicesViewModelTests(unittest.TestCase):
         self.assertEqual("hardware missing", view_model.error)
         self.assertIsNone(view_model.summary)
 
+    def test_real_application_mock_enumeration_maps_summary_capabilities_and_channels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            replay_app = ReplayApplication(workspace=tmp)
+            view_model = DevicesViewModel(replay_app, _runner())
+
+            view_model.set_driver("mock")
+            view_model.enumerate_current_device()
+            _wait_for(lambda: not view_model.busy and view_model.summary is not None, self._app)
+
+            assert view_model.summary is not None
+            self.assertEqual("mock", view_model.summary.driver)
+            self.assertEqual("MockDevice", view_model.summary.name)
+            self.assertEqual("Online", view_model.summary.health)
+            self.assertEqual(8, view_model.summary.channel_count)
+            self.assertEqual(8, len(view_model.channels))
+            self.assertEqual("Unknown", view_model.channels[0].status)
+            self.assertEqual(("CAN", "CANFD", "Async Send", "FIFO Read"), tuple(row.name for row in view_model.capabilities))
+            self.assertTrue(all(row.supported for row in view_model.capabilities))
+
 
 class ReplaySessionViewModelTests(unittest.TestCase):
     @classmethod
@@ -660,6 +706,46 @@ class ReplaySessionViewModelTests(unittest.TestCase):
         self.assertEqual("Stopped", view_model.display_state)
         self.assertFalse(view_model.active)
         self.assertIsNone(view_model.session)
+
+    def test_real_application_mock_replay_runs_to_completion_and_releases_active_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            replay_app = ReplayApplication(workspace=tmp)
+            record = replay_app.import_trace(ROOT / "examples" / "sample.asc")
+            source = replay_app.inspect_trace(record.trace_id).sources[0]
+            view_model = ReplaySessionViewModel(replay_app, _runner(), poll_interval_ms=20)
+
+            accepted = view_model.start_scenario_body(
+                _scenario_body_from_trace(record, source),
+                base_dir=tmp,
+            )
+            _wait_for(
+                lambda: not view_model.busy and view_model.display_state in {"Completed", "Failed"},
+                self._app,
+            )
+
+            self.assertTrue(accepted)
+            self.assertIsNotNone(view_model.session)
+            self.assertEqual("Completed", view_model.display_state)
+            self.assertFalse(view_model.active)
+            self.assertEqual(source.frame_count, view_model.timeline_size)
+            self.assertEqual(source.frame_count, view_model.sent_frames)
+            self.assertEqual(0, view_model.skipped_frames)
+            self.assertEqual("", view_model.error_text)
+            self.assertEqual(100.0, view_model.progress_percent)
+
+    def test_real_application_start_failure_reports_error_and_unlocks_editor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            replay_app = ReplayApplication(workspace=tmp)
+            view_model = ReplaySessionViewModel(replay_app, _runner(), poll_interval_ms=20)
+
+            accepted = view_model.start_scenario_body(_scenario_body(), base_dir=tmp)
+            _wait_for(lambda: not view_model.busy and bool(view_model.error), self._app)
+
+            self.assertTrue(accepted)
+            self.assertIn("sample.asc", view_model.error)
+            self.assertEqual("Stopped", view_model.display_state)
+            self.assertFalse(view_model.active)
+            self.assertIsNone(view_model.session)
 
 
 class TraceLibraryViewModelTests(unittest.TestCase):

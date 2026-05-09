@@ -9,8 +9,8 @@
 - M1 异步任务、busy / error / status badge、危险确认和错误详情底座已接入。
 - Trace Library 已完成 Import ASC、Inspect、Rebuild Cache、Delete Trace 和 Refresh 工作流。
 - Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为可编辑 draft，支持新建最小 draft、多 route 编辑、保存、校验和删除。
-- Replay Monitor 已接入第一批非阻塞 Mock replay session：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
-- Devices 已接入第一批 app 层枚举闭环：可编辑 driver / SDK root / application / device type / device index，并展示 device info / capabilities / health / channels。
+- Replay Monitor 已完成 mock / app 层自动化收口：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
+- Devices 已完成 mock / app 层自动化收口：可编辑 driver / SDK root / application / device type / device index，并展示 device info / capabilities / health / channels。
 - Settings 仍是结构化占位。
 - Scenario Editor 已接入多 device / target 参数编辑和现有 target 路由选择；DBC / Signal Override、Diagnostics、DoIP、ZLG、BLF、Settings 产品化、真实窗口点击、高 DPI 和 Windows 硬件 UI 验证尚未完成。
 
@@ -44,8 +44,8 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
 | M3 Scenario Editor 可视化编辑闭环 | `Done` | UI 编辑 schema v2 scenario、device、target 和 routes | M1、ProjectStore、planner 校验 | 多 route / device / target draft 编辑、保存、Validate 和 Mock Run 已接入 |
-| M4 Replay Monitor 运行会话闭环 | `In Progress` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | 第一批已支持 Mock draft 从 UI 运行到完成 |
-| M5 Devices 设备枚举与配置闭环 | `In Progress` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | 第一批已支持 mock 枚举和设备结果展示 |
+| M4 Replay Monitor 运行会话闭环 | `Done` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | Mock / app 层自动化闭环已完成；真机 UI 和高 DPI 仍按 M8 / 手工验证记录 |
+| M5 Devices 设备枚举与配置闭环 | `Done` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | Mock / app 层自动化闭环已完成；同星 UI 真机枚举仍按手工验证记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
 | M7 Diagnostics UI | `Blocked` | CAN ISO-TP / UDS / DoIP 诊断动作界面 | DiagnosticClient port、diagnostic timeline item | 诊断动作进入 ReplayPlan 并由 runtime 分发 |
 | M8 产品化收尾 | `Planned` | 高 DPI、可访问性、深色主题、打包与手工验证 | M2-M5 至少形成工作流闭环 | UI 验证记录完整，可用于日常工程使用 |
@@ -178,7 +178,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M3：Scenario Editor 可视化编辑闭环
 
-状态：`In Progress`
+状态：`Done`
 
 目标：
 
@@ -271,7 +271,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M4：Replay Monitor 运行会话闭环
 
-状态：`In Progress`
+状态：`Done`
 
 目标：
 
@@ -299,6 +299,19 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - runtime error panel 已提供可复制错误详情；Stop 带确认对话框。
 - 本批仅覆盖 Mock / app 层 session 和 offscreen UI 自动化；真实窗口点击、高 DPI 和 Windows 同星真机 UI 验证未执行。
 
+收口批次已交付：
+
+- `ReplayApplication + ReplaySessionViewModel` 已有真实 app 层 mock replay 集成测试：从导入的 `examples/sample.asc` 创建 schema v2 body，启动非阻塞 session，轮询到 Completed，校验 sent / skipped counters，并确认 Scenario editor lock 释放。
+- 真实 app 层启动失败路径已有 ViewModel 测试，能显示错误、保持 Stopped、不留下 active session，也不会锁死编辑入口。
+- Pause / Resume / Stop、final counters、runtime errors 和可复制错误文本继续由 ViewModel / View 自动化测试覆盖。
+- 本批不执行真实窗口点击、高 DPI 或 Windows 同星真机 UI 验证；这些项目记录到 M8 和 `docs/tongxing-hardware-validation.md`。
+
+收口批次验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+- `tests/test_ui_smoke.py`
+
 验收标准：
 
 - Mock scenario 可从 UI 运行到完成。
@@ -308,7 +321,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M5：Devices 设备枚举与配置闭环
 
-状态：`In Progress`
+状态：`Done`
 
 目标：
 
@@ -327,6 +340,17 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - Devices 页面已提供 driver、SDK root、application、device type、device index 编辑入口和 Enumerate 操作。
 - Devices 页面已展示 device info、serial number、channel count、capabilities、health 和 physical channel rows。
 - mock 枚举路径已有 app / ViewModel / View 自动化测试；同星真机 UI 点击验证、高 DPI 和真实窗口点击未执行。
+
+收口批次已交付：
+
+- `ReplayApplication + DevicesViewModel` 已有真实 app 层 mock driver 枚举集成测试，覆盖 device info、channel count、capabilities、health 和 channel rows 映射。
+- Devices 页面仍只通过 `ReplayApplication.enumerate_device()` 调用设备枚举，不直接 import `replay_tool.adapters.tongxing`。
+- Windows + TSMaster + TC1014 的 Devices UI 枚举和 Scenario tongxing draft Run 手工验证步骤已记录到 `docs/tongxing-hardware-validation.md`；未执行时交付说明必须明确未验证。
+
+收口批次验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
 
 验收标准：
 
