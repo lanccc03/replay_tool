@@ -58,12 +58,17 @@ Rebuild Cache, Delete Trace, and Refresh through the application layer.
 Scenarios can list saved records and load a saved schema v2 scenario into a
 draft editor with Overview, Traces & Devices, Routes, and JSON tabs. The editor
 supports creating a mock scenario from imported traces, editing multiple routes,
-saving, validating, and deleting Scenario Store records.
+saving, validating, deleting Scenario Store records, running the current draft
+through a non-blocking mock replay session, and editing device / target channel
+parameters for schema v2 scenarios.
 
-Replay Monitor, Devices, and Settings are still structured placeholders.
-Scenario Run from the UI, hardware enumeration, real device target selection,
-DBC / Signal Override, diagnostics, DoIP, ZLG, BLF, high DPI checks, and Windows
-hardware UI validation are not implemented or not verified yet. See
+Replay Monitor supports the first non-blocking session workflow with snapshot
+polling, progress, counters, errors, Pause, Resume, and Stop. Devices supports
+the first app-layer enumeration workflow for editable driver / SDK / hardware
+parameters and displays device info, capabilities, health, and channels.
+Settings is still a structured placeholder. DBC / Signal Override, diagnostics,
+DoIP, ZLG, BLF, high DPI checks, real window click checks, and Windows hardware
+UI validation are not implemented or not verified yet. See
 [`docs/ui-implementation-roadmap.md`](docs/ui-implementation-roadmap.md) for the
 current UI milestone status.
 

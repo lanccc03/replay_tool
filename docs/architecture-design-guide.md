@@ -534,7 +534,7 @@ domain/diagnostics.py
 
 ## 9. UI 设计原则
 
-UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流，以及 saved scenario 的只读 draft preview；Replay Monitor、Devices、Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
+UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流、Scenario Store 可视化 draft 编辑 / 保存 / 校验 / 运行、Replay Monitor 第一批非阻塞 Mock session 控制，以及 Devices 第一批 app 层枚举工作流。Settings 仍是结构化占位。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
 
 当前 / 建议结构：
 
@@ -716,10 +716,9 @@ replay-tool delete-scenario <scenario-id>
 必须补：
 
 - 壳层、主题、导航、异步任务、Trace Library 完整工作流。（已具备）
-- Scenario Editor 只读 draft preview。（已具备第一批）
-- Scenario 可编辑保存、Validate、Run、Delete 闭环。
-- replay monitor view。
-- devices view 的 app 层枚举和配置闭环。
+- Scenario Editor schema v2 draft preview、可编辑保存、Validate、Run、Delete、device / target / route 编辑闭环。（已具备）
+- replay monitor view 第一批非阻塞 Mock session 控制。（已具备）
+- devices view 的 app 层枚举和配置闭环。（已具备第一批）
 - signal override view。
 - diagnostics view。
 - 高 DPI、真实窗口点击和 Windows 硬件 UI 验证记录。
@@ -731,7 +730,7 @@ replay-tool delete-scenario <scenario-id>
 已经具备：
 
 - headless CLI。
-- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表和 saved scenario 只读 draft preview、Monitor / Devices / Settings 占位页。
+- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表、schema v2 draft 可视化编辑 / 保存 / Validate / Run、Replay Monitor 第一批非阻塞 Mock session 控制、Devices 第一批 app 层枚举页面，以及 Settings 占位页。
 - domain / planning / runtime / ports / adapters / storage / app 分层。
 - Mock 回放。
 - 同星 adapter。
@@ -747,7 +746,7 @@ replay-tool delete-scenario <scenario-id>
 - CAN UDS / DoIP / DTC。
 - BLF 解析。
 - ZLG。
-- PySide6 UI 后续闭环：Scenario 可编辑保存 / Validate / Run / Delete、Replay Monitor 运行控制、Devices 枚举配置、真实窗口点击、高 DPI 手工验证仍未完成。
+- PySide6 UI 后续闭环：DBC / Signal Override、Diagnostics、DoIP、ZLG、BLF、Settings 产品化、真实窗口点击、高 DPI 手工验证和 Windows 同星真机 UI 验证仍未完成。
 - Windows 同星真机验证结论。
 
 后续实现时，请优先保持架构边界清晰。不要为了快速补功能，让 runtime 直接认识硬件 SDK，也不要让 UI 直接操作 adapter。

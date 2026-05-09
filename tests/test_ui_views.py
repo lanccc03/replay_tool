@@ -364,12 +364,13 @@ def _scenario_body() -> dict[str, object]:
     }
 
 
-def _scenario_record() -> ScenarioRecord:
+def _scenario_record(body: dict[str, object] | None = None) -> ScenarioRecord:
+    payload = body if body is not None else _scenario_body()
     return ScenarioRecord(
         scenario_id="scenario-1",
-        name="demo-scenario",
+        name=str(payload.get("name", "demo-scenario")),
         base_dir="C:/data",
-        body=_scenario_body(),
+        body=payload,
         updated_at="2026-05-08T00:00:00",
         trace_count=1,
         route_count=1,
@@ -772,6 +773,10 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertFalse(view.run_enabled())
             self.assertFalse(view.add_route_enabled())
             self.assertFalse(view.remove_route_enabled())
+            self.assertFalse(view.add_device_enabled())
+            self.assertFalse(view.remove_device_enabled())
+            self.assertFalse(view.add_target_enabled())
+            self.assertFalse(view.remove_target_enabled())
 
             view.edit_overview_name("blocked-edit")
             self.assertEqual(before, view.json_preview_text())
@@ -843,7 +848,7 @@ class ScenariosViewTests(unittest.TestCase):
                     self.assertIn("sample.asc", dialog.body_text())
                     self.assertIn("CH0 CANFD", dialog.body_text())
                     self.assertIn("Logical Channel: 1", dialog.body_text())
-                    self.assertIn("Physical Channel: 1", dialog.body_text())
+                    self.assertIn("mock0 / CH0 CANFD", dialog.body_text())
                 finally:
                     dialog.close()
             finally:
@@ -908,6 +913,76 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertIn('"name": "edited-scenario"', view.json_preview_text())
             self.assertIn('"loop": true', view.json_preview_text())
             self.assertTrue(view.run_enabled())
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_device_and_target_editors_update_preview_and_lock_with_replay(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+            self.assertTrue(view.add_device_enabled())
+            self.assertTrue(view.add_target_enabled())
+            view.select_device(0)
+            view.edit_device_driver("tongxing")
+            view.edit_device_sdk_root("C:/TSMaster")
+            view.edit_device_application("BenchApp")
+            view.edit_device_type("TC1014")
+            view.edit_device_index(3)
+            view.select_target(0)
+            view.edit_target_bus("CAN")
+            view.edit_target_nominal_baud(250000)
+            view.edit_target_data_baud(1000000)
+            view.edit_target_resistance_enabled(False)
+            view.edit_target_listen_only(True)
+            view.edit_target_tx_echo(True)
+
+            self.assertIn('"driver": "tongxing"', view.json_preview_text())
+            self.assertIn('"sdk_root": "C:/TSMaster"', view.json_preview_text())
+            self.assertIn('"application": "BenchApp"', view.json_preview_text())
+            self.assertIn('"device_index": 3', view.json_preview_text())
+            self.assertIn('"bus": "CAN"', view.json_preview_text())
+            self.assertIn('"nominal_baud": 250000', view.json_preview_text())
+            self.assertIn('"listen_only": true', view.json_preview_text())
+
+            view.set_replay_active(True)
+            self.assertFalse(view.add_device_enabled())
+            self.assertFalse(view.remove_device_enabled())
+            self.assertFalse(view.add_target_enabled())
+            self.assertFalse(view.remove_target_enabled())
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_target_issue_is_shown_near_target_and_route_editors(self) -> None:
+        body = _scenario_body()
+        body["targets"] = [
+            *body["targets"],
+            {"id": "target-can", "device": "mock0", "physical_channel": 1, "bus": "CAN"},
+        ]
+        scenario_app = _ScenarioApp(records=[_scenario_record(body)])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+
+            view.select_route(0)
+            view.edit_route_target("target-can")
+
+            self.assertFalse(view.run_enabled())
+            self.assertIn("CANFD source to CAN target", view.route_issue_text())
+            title, body_text = view.inspector_snapshot()
+            self.assertEqual("Scenario Draft Issues", title)
+            self.assertIn("routes[0].target", body_text)
         finally:
             view.close()
             self._app.processEvents()

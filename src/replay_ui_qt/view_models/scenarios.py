@@ -148,6 +148,8 @@ class DraftDeviceRow:
 
     device_id: str
     driver: str
+    application: str
+    sdk_root: str
     device_type: str
     device_index: int
 
@@ -170,6 +172,11 @@ class DraftTargetRow:
     device_id: str
     physical_channel: int
     bus: str
+    nominal_baud: int
+    data_baud: int
+    resistance_enabled: bool
+    listen_only: bool
+    tx_echo: bool
 
 
 @dataclass(frozen=True)
@@ -316,6 +323,15 @@ class ScenarioDraftIssue:
             return f"{self.section}.{self.field}"
         return f"{self.section}[{self.row}].{self.field}"
 
+    @property
+    def blocking(self) -> bool:
+        """Return whether this issue should block Validate/Run.
+
+        Returns:
+            True for error-level issues; False for warning-level notices.
+        """
+        return self.severity == "error"
+
 
 @dataclass(frozen=True)
 class ScenarioDraft:
@@ -371,6 +387,8 @@ class ScenarioDraft:
             DraftDeviceRow(
                 device_id=str(item.get("id", "")),
                 driver=str(item.get("driver", "")),
+                application=str(item.get("application", "ReplayTool")),
+                sdk_root=str(item.get("sdk_root", "TSMaster/Windows")),
                 device_type=str(item.get("device_type", "")),
                 device_index=int(item.get("device_index", 0)),
             )
@@ -391,6 +409,11 @@ class ScenarioDraft:
                 device_id=str(item.get("device", "")),
                 physical_channel=int(item.get("physical_channel", 0)),
                 bus=str(item.get("bus", "")),
+                nominal_baud=int(item.get("nominal_baud", 500000)),
+                data_baud=int(item.get("data_baud", 2000000)),
+                resistance_enabled=bool(item.get("resistance_enabled", True)),
+                listen_only=bool(item.get("listen_only", False)),
+                tx_echo=bool(item.get("tx_echo", False)),
             )
             for item in _body_list(body, "targets")
         )
@@ -624,6 +647,15 @@ class ScenariosViewModel(BaseViewModel):
         if self._draft is None:
             return ()
         return tuple(ScenarioTargetEndpointChoice.from_row(row) for row in self._draft.targets)
+
+    @property
+    def has_blocking_issues(self) -> bool:
+        """Return whether the current draft has error-level issues.
+
+        Returns:
+            True when Validate/Run should be blocked by local draft issues.
+        """
+        return any(issue.blocking for issue in self._draft_issues)
 
     def refresh(self) -> None:
         """Reload saved scenario rows from the active workspace."""
@@ -862,12 +894,239 @@ class ScenariosViewModel(BaseViewModel):
         body["routes"] = routes
         self._replace_draft_body(body)
 
+    def set_device_driver(self, index: int, driver: str) -> None:
+        """Update one device adapter driver in the loaded draft.
+
+        Args:
+            index: Device row index.
+            driver: Adapter driver identifier.
+        """
+        self._set_device_field(index, "driver", str(driver).lower())
+
+    def set_device_sdk_root(self, index: int, sdk_root: str) -> None:
+        """Update one device SDK root in the loaded draft.
+
+        Args:
+            index: Device row index.
+            sdk_root: SDK root path text.
+        """
+        self._set_device_field(index, "sdk_root", str(sdk_root))
+
+    def set_device_application(self, index: int, application: str) -> None:
+        """Update one device application name in the loaded draft.
+
+        Args:
+            index: Device row index.
+            application: TSMaster application name.
+        """
+        self._set_device_field(index, "application", str(application))
+
+    def set_device_type(self, index: int, device_type: str) -> None:
+        """Update one device type in the loaded draft.
+
+        Args:
+            index: Device row index.
+            device_type: Hardware device type text.
+        """
+        self._set_device_field(index, "device_type", str(device_type))
+
+    def set_device_index(self, index: int, device_index: int) -> None:
+        """Update one device hardware index in the loaded draft.
+
+        Args:
+            index: Device row index.
+            device_index: Hardware device index.
+        """
+        self._set_device_field(index, "device_index", int(device_index))
+
+    def add_device(self, *, driver: str = "tongxing") -> None:
+        """Append a new device configuration to the loaded draft.
+
+        Args:
+            driver: Adapter driver identifier for the new device.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        devices = _body_list(body, "devices")
+        device_id = _unique_resource_id("device0", _resource_ids(body))
+        devices.append(
+            {
+                "id": device_id,
+                "driver": str(driver).lower(),
+                "application": "ReplayTool",
+                "sdk_root": "TSMaster/Windows",
+                "device_type": "TC1014",
+                "device_index": 0,
+            }
+        )
+        body["devices"] = devices
+        self._replace_draft_body(body, status_message=f"Device 已添加: {device_id}")
+
+    def remove_device(self, index: int) -> None:
+        """Remove an unreferenced device from the loaded draft.
+
+        Devices referenced by targets are not removed. The draft body is left
+        unchanged and a warning issue is exposed for the attempted deletion.
+
+        Args:
+            index: Device row index to remove.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        devices = _body_list(body, "devices")
+        if not _valid_index(devices, index):
+            self.set_status_message("Device 不存在")
+            return
+        device_id = str(devices[int(index)].get("id", ""))
+        targets = _body_list(body, "targets")
+        if any(str(item.get("device", "")) == device_id for item in targets):
+            self._set_action_issue(
+                ScenarioDraftIssue(
+                    section="devices",
+                    row=int(index),
+                    field="id",
+                    message=f"Device is referenced by a target and cannot be removed: {device_id}",
+                    severity="warning",
+                ),
+                status_message=f"Device 正被 Target 引用，无法删除: {device_id}",
+            )
+            return
+        del devices[int(index)]
+        body["devices"] = devices
+        self._replace_draft_body(body, status_message=f"Device 已删除: {device_id}")
+
+    def set_target_device(self, index: int, device_id: str) -> None:
+        """Update one target's device reference.
+
+        Args:
+            index: Target row index.
+            device_id: Device ID to assign to the target.
+        """
+        self._set_target_field(index, "device", str(device_id))
+
+    def set_target_bus(self, index: int, bus: str) -> None:
+        """Update one target bus type.
+
+        Args:
+            index: Target row index.
+            bus: Bus type text, usually CAN or CANFD.
+        """
+        self._set_target_field(index, "bus", str(bus).upper())
+
     def set_target_physical_channel(self, index: int, value: int) -> None:
         """Update one target physical channel in the loaded draft.
 
         Args:
             index: Target row index.
             value: New physical channel value.
+        """
+        self._set_target_field(index, "physical_channel", int(value))
+
+    def set_target_nominal_baud(self, index: int, value: int) -> None:
+        """Update one target nominal baud rate.
+
+        Args:
+            index: Target row index.
+            value: Nominal baud rate.
+        """
+        self._set_target_field(index, "nominal_baud", int(value))
+
+    def set_target_data_baud(self, index: int, value: int) -> None:
+        """Update one target CAN FD data baud rate.
+
+        Args:
+            index: Target row index.
+            value: Data baud rate.
+        """
+        self._set_target_field(index, "data_baud", int(value))
+
+    def set_target_resistance_enabled(self, index: int, enabled: bool) -> None:
+        """Update one target termination resistance flag.
+
+        Args:
+            index: Target row index.
+            enabled: Whether termination resistance is enabled.
+        """
+        self._set_target_field(index, "resistance_enabled", bool(enabled))
+
+    def set_target_listen_only(self, index: int, enabled: bool) -> None:
+        """Update one target listen-only flag.
+
+        Args:
+            index: Target row index.
+            enabled: Whether listen-only mode is enabled.
+        """
+        self._set_target_field(index, "listen_only", bool(enabled))
+
+    def set_target_tx_echo(self, index: int, enabled: bool) -> None:
+        """Update one target TX echo flag.
+
+        Args:
+            index: Target row index.
+            enabled: Whether TX echo is enabled.
+        """
+        self._set_target_field(index, "tx_echo", bool(enabled))
+
+    def add_target(
+        self,
+        *,
+        device_id: str = "",
+        bus: str = "CANFD",
+        physical_channel: int | None = None,
+    ) -> None:
+        """Append a new target endpoint to the loaded draft.
+
+        Args:
+            device_id: Existing device ID to attach the target to. When empty,
+                the first draft device is used.
+            bus: Bus type for the new target.
+            physical_channel: Optional physical channel. When omitted, the
+                next stable channel number for the device is used.
+        """
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        if not draft.devices:
+            self.set_status_message("缺少 Device，无法添加 Target")
+            return
+        body = _copy_body(draft.body)
+        devices = _body_list(body, "devices")
+        selected_device = str(device_id) or str(devices[0].get("id", ""))
+        if all(str(item.get("id", "")) != selected_device for item in devices):
+            self.set_status_message("Device 不存在")
+            return
+        channel = _next_target_physical_channel(body, selected_device) if physical_channel is None else int(physical_channel)
+        bus_value = str(bus).upper()
+        target_id = _unique_target_id(body, selected_device, bus_value, channel)
+        targets = _body_list(body, "targets")
+        targets.append(
+            {
+                "id": target_id,
+                "device": selected_device,
+                "physical_channel": channel,
+                "bus": bus_value,
+                "nominal_baud": 500000,
+                "data_baud": 2000000,
+                "resistance_enabled": True,
+                "listen_only": False,
+                "tx_echo": False,
+            }
+        )
+        body["targets"] = targets
+        self._replace_draft_body(body, status_message=f"Target 已添加: {target_id}")
+
+    def remove_target(self, index: int) -> None:
+        """Remove an unreferenced target from the loaded draft.
+
+        Targets referenced by routes are not removed. The draft body is left
+        unchanged and a warning issue is exposed for the attempted deletion.
+
+        Args:
+            index: Target row index to remove.
         """
         if not self._can_edit_draft():
             return
@@ -877,9 +1136,23 @@ class ScenariosViewModel(BaseViewModel):
         if not _valid_index(targets, index):
             self.set_status_message("Target 不存在")
             return
-        targets[int(index)]["physical_channel"] = int(value)
+        target_id = str(targets[int(index)].get("id", ""))
+        routes = _body_list(body, "routes")
+        if any(str(item.get("target", "")) == target_id for item in routes):
+            self._set_action_issue(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=int(index),
+                    field="id",
+                    message=f"Target is referenced by a route and cannot be removed: {target_id}",
+                    severity="warning",
+                ),
+                status_message=f"Target 正被 Route 引用，无法删除: {target_id}",
+            )
+            return
+        del targets[int(index)]
         body["targets"] = targets
-        self._replace_draft_body(body)
+        self._replace_draft_body(body, status_message=f"Target 已删除: {target_id}")
 
     def add_route_from_trace(
         self,
@@ -887,34 +1160,44 @@ class ScenariosViewModel(BaseViewModel):
         source: ScenarioSourceChoice,
         *,
         logical_channel: int,
-        physical_channel: int,
+        physical_channel: int | None = None,
+        target_id: str = "",
     ) -> None:
-        """Append a route using an imported trace source and a mock target.
+        """Append a route using an imported trace source and target endpoint.
 
         Args:
             trace: Imported trace selected by the user.
             source: Source channel and bus selected from trace inspection.
             logical_channel: Logical replay channel for the new route.
-            physical_channel: Mock target physical channel for the new route.
+            physical_channel: Optional mock target channel for legacy callers
+                that do not provide an existing target.
+            target_id: Optional existing target endpoint ID. When provided,
+                Add Route uses this target instead of creating a mock target.
         """
         if not self._can_edit_draft():
             return
         draft = self._require_draft_for_edit()
         body = _copy_body(draft.body)
         _ensure_trace_resource(body, trace)
-        _ensure_mock_device(body)
         source_id = _ensure_source_resource(body, trace, source)
-        target_id = _ensure_mock_target_resource(
-            body,
-            bus=source.bus,
-            physical_channel=int(physical_channel),
-        )
+        selected_target_id = str(target_id)
+        if selected_target_id:
+            if all(str(item.get("id", "")) != selected_target_id for item in _body_list(body, "targets")):
+                self.set_status_message("Target 不存在")
+                return
+        else:
+            _ensure_mock_device(body)
+            selected_target_id = _ensure_mock_target_resource(
+                body,
+                bus=source.bus,
+                physical_channel=int(logical_channel if physical_channel is None else physical_channel),
+            )
         routes = _body_list(body, "routes")
         routes.append(
             {
                 "logical_channel": int(logical_channel),
                 "source": source_id,
-                "target": target_id,
+                "target": selected_target_id,
             }
         )
         body["routes"] = routes
@@ -1054,6 +1337,37 @@ class ScenariosViewModel(BaseViewModel):
         )
         self._set_validation(None)
         self._set_delete_result(None)
+        self.set_status_message(status_message)
+
+    def _set_device_field(self, index: int, field: str, value: object) -> None:
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        devices = _body_list(body, "devices")
+        if not _valid_index(devices, index):
+            self.set_status_message("Device 不存在")
+            return
+        devices[int(index)][str(field)] = value
+        body["devices"] = devices
+        self._replace_draft_body(body)
+
+    def _set_target_field(self, index: int, field: str, value: object) -> None:
+        if not self._can_edit_draft():
+            return
+        draft = self._require_draft_for_edit()
+        body = _copy_body(draft.body)
+        targets = _body_list(body, "targets")
+        if not _valid_index(targets, index):
+            self.set_status_message("Target 不存在")
+            return
+        targets[int(index)][str(field)] = value
+        body["targets"] = targets
+        self._replace_draft_body(body)
+
+    def _set_action_issue(self, issue: ScenarioDraftIssue, *, status_message: str) -> None:
+        self._draft_issues = (*_draft_issues_for(self._draft), issue)
+        self.draftIssuesChanged.emit()
         self.set_status_message(status_message)
 
 
@@ -1214,10 +1528,43 @@ def _ensure_mock_target_resource(
             "device": "mock0",
             "physical_channel": int(physical_channel),
             "bus": str(bus),
+            "nominal_baud": 500000,
+            "data_baud": 2000000,
+            "resistance_enabled": True,
+            "listen_only": False,
+            "tx_echo": False,
         }
     )
     body["targets"] = targets
     return target_id
+
+
+def _unique_target_id(body: dict[str, Any], device_id: str, bus: str, physical_channel: int) -> str:
+    base_id = f"{_safe_id(device_id)}-ch{int(physical_channel)}-{_safe_id(bus)}"
+    return _unique_resource_id(base_id, _resource_ids(body))
+
+
+def _next_target_physical_channel(body: dict[str, Any], device_id: str) -> int:
+    used = {
+        int(item.get("physical_channel", -1))
+        for item in _body_list(body, "targets")
+        if str(item.get("device", "")) == str(device_id)
+    }
+    for value in range(256):
+        if value not in used:
+            return value
+    return 255
+
+
+def _duplicate_values(rows: tuple[object, ...], getter: str) -> set[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for row in rows:
+        value = str(getattr(row, getter))
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return duplicates
 
 
 def _draft_issues_for(draft: ScenarioDraft | None) -> tuple[ScenarioDraftIssue, ...]:
@@ -1237,6 +1584,82 @@ def _draft_issues_for(draft: ScenarioDraft | None) -> tuple[ScenarioDraftIssue, 
     device_ids = {row.device_id for row in draft.devices}
     sources_by_id = {row.source_id: row for row in draft.sources}
     targets_by_id = {row.target_id: row for row in draft.targets}
+    duplicate_device_ids = _duplicate_values(draft.devices, "device_id")
+    duplicate_target_ids = _duplicate_values(draft.targets, "target_id")
+    for row_index, device in enumerate(draft.devices):
+        if not device.device_id:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="devices",
+                    row=row_index,
+                    field="id",
+                    message="Device ID is required.",
+                )
+            )
+        if device.device_id in duplicate_device_ids:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="devices",
+                    row=row_index,
+                    field="id",
+                    message=f"Device ID must be unique: {device.device_id}",
+                )
+            )
+        if not device.driver:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="devices",
+                    row=row_index,
+                    field="driver",
+                    message="Device driver is required.",
+                )
+            )
+    for row_index, target in enumerate(draft.targets):
+        if not target.target_id:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="id",
+                    message="Target ID is required.",
+                )
+            )
+        if target.target_id in duplicate_target_ids:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="id",
+                    message=f"Target ID must be unique: {target.target_id}",
+                )
+            )
+        if target.bus not in {"CAN", "CANFD"}:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="bus",
+                    message=f"Target bus must be CAN or CANFD: {target.bus}",
+                )
+            )
+        if target.nominal_baud <= 0:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="nominal_baud",
+                    message="Target nominal baud must be positive.",
+                )
+            )
+        if target.data_baud <= 0:
+            issues.append(
+                ScenarioDraftIssue(
+                    section="targets",
+                    row=row_index,
+                    field="data_baud",
+                    message="Target data baud must be positive.",
+                )
+            )
     for row_index, source in enumerate(draft.sources):
         if source.trace_id not in trace_ids:
             issues.append(
@@ -1343,6 +1766,11 @@ def _new_scenario_body(
                 "device": "mock0",
                 "physical_channel": 0,
                 "bus": bus,
+                "nominal_baud": 500000,
+                "data_baud": 2000000,
+                "resistance_enabled": True,
+                "listen_only": False,
+                "tx_echo": False,
             }
         ],
         "routes": [{"logical_channel": 0, "source": source_id, "target": target_id}],

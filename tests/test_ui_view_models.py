@@ -1100,8 +1100,13 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertEqual(2, draft.schema_version)
         self.assertEqual("trace1", draft.traces[0].trace_id)
         self.assertEqual("mock0", draft.devices[0].device_id)
+        self.assertEqual("ReplayTool", draft.devices[0].application)
+        self.assertEqual("TSMaster/Windows", draft.devices[0].sdk_root)
         self.assertEqual("source0", draft.sources[0].source_id)
         self.assertEqual("target0", draft.targets[0].target_id)
+        self.assertEqual(500000, draft.targets[0].nominal_baud)
+        self.assertEqual(2000000, draft.targets[0].data_baud)
+        self.assertTrue(draft.targets[0].resistance_enabled)
         self.assertEqual("trace1 / CH0 CANFD", draft.routes[0].source_label)
         self.assertEqual("mock0 / CH0 CANFD", draft.routes[0].target_label)
         self.assertIn('"schema_version": 2', draft.json_text)
@@ -1284,6 +1289,94 @@ class ScenariosViewModelTests(unittest.TestCase):
         self.assertTrue(draft.dirty)
         self.assertEqual((), view_model.draft_issues)
         self.assertEqual("Route 已添加", view_model.status_message)
+
+    def test_device_and_target_edits_update_body_and_json(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.set_device_driver(0, "tongxing")
+        view_model.set_device_sdk_root(0, "C:/TSMaster")
+        view_model.set_device_application(0, "BenchApp")
+        view_model.set_device_type(0, "TC1014")
+        view_model.set_device_index(0, 2)
+        view_model.set_target_bus(0, "CAN")
+        view_model.set_target_nominal_baud(0, 250000)
+        view_model.set_target_data_baud(0, 1000000)
+        view_model.set_target_resistance_enabled(0, False)
+        view_model.set_target_listen_only(0, True)
+        view_model.set_target_tx_echo(0, True)
+
+        draft = view_model.draft
+        self.assertEqual("tongxing", draft.devices[0].driver)
+        self.assertEqual("C:/TSMaster", draft.devices[0].sdk_root)
+        self.assertEqual("BenchApp", draft.body["devices"][0]["application"])
+        self.assertEqual("TC1014", draft.devices[0].device_type)
+        self.assertEqual(2, draft.devices[0].device_index)
+        self.assertEqual("CAN", draft.targets[0].bus)
+        self.assertEqual(250000, draft.targets[0].nominal_baud)
+        self.assertEqual(1000000, draft.body["targets"][0]["data_baud"])
+        self.assertFalse(draft.body["targets"][0]["resistance_enabled"])
+        self.assertTrue(draft.body["targets"][0]["listen_only"])
+        self.assertTrue(draft.body["targets"][0]["tx_echo"])
+        self.assertTrue(draft.dirty)
+        self.assertIn('"sdk_root": "C:/TSMaster"', draft.json_text)
+
+    def test_add_remove_device_and_target_reference_guards(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
+
+        view_model.load_scenario("scenario-1")
+        _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+        view_model.add_device()
+        view_model.add_target(device_id="device0", bus="CANFD")
+
+        draft = view_model.draft
+        self.assertEqual(2, len(draft.devices))
+        self.assertEqual("device0", draft.devices[1].device_id)
+        self.assertEqual("tongxing", draft.devices[1].driver)
+        self.assertEqual(2, len(draft.targets))
+        self.assertEqual("device0-ch0-canfd", draft.targets[1].target_id)
+
+        view_model.remove_device(1)
+
+        self.assertEqual(2, len(view_model.draft.devices))
+        self.assertEqual("warning", view_model.draft_issues[-1].severity)
+        self.assertFalse(view_model.has_blocking_issues)
+        self.assertIn("Device 正被 Target 引用", view_model.status_message)
+
+        view_model.remove_target(1)
+
+        self.assertEqual(1, len(view_model.draft.targets))
+        self.assertEqual("Target 已删除: device0-ch0-canfd", view_model.status_message)
+
+        view_model.remove_device(1)
+
+        self.assertEqual(1, len(view_model.draft.devices))
+        self.assertEqual("Device 已删除: device0", view_model.status_message)
+
+    def test_add_route_can_use_existing_target_without_creating_mock_target(self) -> None:
+        trace = _trace_record("trace-lib-1", name="sample.asc")
+        scenario_app = _ScenarioApp(trace_records=[trace], trace_inspection=_trace_inspection(trace))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        source = view_model.source_choices_for_trace(trace.trace_id)[0]
+
+        view_model.create_new_scenario_from_trace(ScenarioTraceChoice.from_record(trace), source)
+        view_model.add_device()
+        view_model.add_target(device_id="device0", bus="CANFD")
+        view_model.add_route_from_trace(
+            ScenarioTraceChoice.from_record(trace),
+            source,
+            logical_channel=1,
+            target_id="device0-ch0-canfd",
+        )
+
+        draft = view_model.draft
+        self.assertEqual(2, len(draft.targets))
+        self.assertEqual("device0-ch0-canfd", draft.body["routes"][1]["target"])
+        self.assertEqual("device0 / CH0 CANFD", draft.routes[1].target_label)
+        self.assertEqual((), view_model.draft_issues)
 
     def test_remove_route_only_removes_route_and_reports_empty_routes_issue(self) -> None:
         scenario_app = _ScenarioApp(records=[_scenario_record()])

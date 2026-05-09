@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from replay_ui_qt.view_models.scenarios import (
+    DraftDeviceRow,
     DraftRouteRow,
     DraftTargetRow,
     ScenarioDeleteResultDetails,
@@ -77,8 +78,20 @@ class ScenariosView(QWidget):
             (
                 TableColumn("Device ID", lambda row: row.device_id, monospace=True),
                 TableColumn("Driver", lambda row: row.driver),
+                TableColumn("SDK root", lambda row: row.sdk_root, tooltip=lambda row: row.sdk_root),
+                TableColumn("Application", lambda row: row.application),
                 TableColumn("Device Type", lambda row: row.device_type),
                 TableColumn("Index", lambda row: row.device_index, align_right=True),
+            )
+        )
+        self._target_model = ObjectTableModel(
+            (
+                TableColumn("Target ID", lambda row: row.target_id, monospace=True),
+                TableColumn("Device", lambda row: row.device_id, monospace=True),
+                TableColumn("Bus", lambda row: row.bus),
+                TableColumn("CH", lambda row: row.physical_channel, align_right=True),
+                TableColumn("Nominal", lambda row: row.nominal_baud, align_right=True),
+                TableColumn("Data", lambda row: row.data_baud, align_right=True),
             )
         )
         self._route_model = ObjectTableModel(
@@ -196,6 +209,38 @@ class ScenariosView(QWidget):
         """
         return self._remove_route_button.isEnabled()
 
+    def add_device_enabled(self) -> bool:
+        """Return whether Add Device is enabled.
+
+        Returns:
+            True when the loaded draft can accept another device.
+        """
+        return self._add_device_button.isEnabled()
+
+    def remove_device_enabled(self) -> bool:
+        """Return whether Remove Device is enabled.
+
+        Returns:
+            True when a device is selected and can be removed.
+        """
+        return self._remove_device_button.isEnabled()
+
+    def add_target_enabled(self) -> bool:
+        """Return whether Add Target is enabled.
+
+        Returns:
+            True when the loaded draft can accept another target.
+        """
+        return self._add_target_button.isEnabled()
+
+    def remove_target_enabled(self) -> bool:
+        """Return whether Remove Target is enabled.
+
+        Returns:
+            True when a target is selected and can be removed.
+        """
+        return self._remove_target_button.isEnabled()
+
     def error_details_enabled(self) -> bool:
         """Return whether the error details button is enabled.
 
@@ -203,6 +248,30 @@ class ScenariosView(QWidget):
             True when an error can be opened.
         """
         return self._error_button.isEnabled()
+
+    def device_issue_text(self) -> str:
+        """Return nearby device issue text.
+
+        Returns:
+            Text shown under the selected device editor.
+        """
+        return self._device_issue_label.text()
+
+    def target_issue_text(self) -> str:
+        """Return nearby target issue text.
+
+        Returns:
+            Text shown under the selected target editor.
+        """
+        return self._target_issue_label.text()
+
+    def route_issue_text(self) -> str:
+        """Return nearby route issue text.
+
+        Returns:
+            Text shown under the selected route editor.
+        """
+        return self._route_issue_label.text()
 
     def status_badge_state(self) -> tuple[str, str]:
         """Return status badge text and semantic key.
@@ -324,6 +393,142 @@ class ScenariosView(QWidget):
         self._target_physical_spin.setValue(int(value))
         self._apply_target_physical_edit()
 
+    def select_device(self, row: int) -> None:
+        """Select one device row in the editor.
+
+        Args:
+            row: Zero-based device row index.
+        """
+        if 0 <= row < self._device_model.rowCount():
+            self._devices_table.selectRow(row)
+            self._sync_device_controls_for_current_device()
+
+    def select_target(self, row: int) -> None:
+        """Select one target row in the editor.
+
+        Args:
+            row: Zero-based target row index.
+        """
+        if 0 <= row < self._target_model.rowCount():
+            self._targets_table.selectRow(row)
+            self._sync_target_controls_for_current_target()
+
+    def edit_device_driver(self, value: str) -> None:
+        """Set the selected device driver through the edit control.
+
+        Args:
+            value: New device driver.
+        """
+        index = self._combo_index_for_text(self._device_driver_combo, value)
+        if index < 0:
+            self._device_driver_combo.addItem(str(value))
+            index = self._combo_index_for_text(self._device_driver_combo, value)
+        self._device_driver_combo.setCurrentIndex(index)
+        self._apply_device_driver_edit()
+
+    def edit_device_sdk_root(self, value: str) -> None:
+        """Set the selected device SDK root through the edit control.
+
+        Args:
+            value: New SDK root text.
+        """
+        self._device_sdk_root_edit.setText(str(value))
+        self._apply_device_sdk_root_edit()
+
+    def edit_device_application(self, value: str) -> None:
+        """Set the selected device application through the edit control.
+
+        Args:
+            value: New application text.
+        """
+        self._device_application_edit.setText(str(value))
+        self._apply_device_application_edit()
+
+    def edit_device_type(self, value: str) -> None:
+        """Set the selected device type through the edit control.
+
+        Args:
+            value: New device type.
+        """
+        self._device_type_edit.setText(str(value))
+        self._apply_device_type_edit()
+
+    def edit_device_index(self, value: int) -> None:
+        """Set the selected device index through the edit control.
+
+        Args:
+            value: New device index.
+        """
+        self._device_index_spin.setValue(int(value))
+        self._apply_device_index_edit()
+
+    def edit_target_device(self, device_id: str) -> None:
+        """Set the selected target device through the edit control.
+
+        Args:
+            device_id: Device ID to assign.
+        """
+        index = self._combo_index_for_data(self._target_device_combo, device_id)
+        if index >= 0:
+            self._target_device_combo.setCurrentIndex(index)
+        self._apply_target_device_edit()
+
+    def edit_target_bus(self, bus: str) -> None:
+        """Set the selected target bus through the edit control.
+
+        Args:
+            bus: New bus type.
+        """
+        index = self._combo_index_for_text(self._target_bus_combo, bus)
+        if index >= 0:
+            self._target_bus_combo.setCurrentIndex(index)
+        self._apply_target_bus_edit()
+
+    def edit_target_nominal_baud(self, value: int) -> None:
+        """Set the selected target nominal baud through the edit control.
+
+        Args:
+            value: New nominal baud rate.
+        """
+        self._target_nominal_baud_spin.setValue(int(value))
+        self._apply_target_nominal_baud_edit()
+
+    def edit_target_data_baud(self, value: int) -> None:
+        """Set the selected target data baud through the edit control.
+
+        Args:
+            value: New data baud rate.
+        """
+        self._target_data_baud_spin.setValue(int(value))
+        self._apply_target_data_baud_edit()
+
+    def edit_target_resistance_enabled(self, enabled: bool) -> None:
+        """Set the selected target resistance flag through the edit control.
+
+        Args:
+            enabled: Whether resistance should be enabled.
+        """
+        self._target_resistance_check.setChecked(bool(enabled))
+        self._apply_target_resistance_edit()
+
+    def edit_target_listen_only(self, enabled: bool) -> None:
+        """Set the selected target listen-only flag through the edit control.
+
+        Args:
+            enabled: Whether listen-only should be enabled.
+        """
+        self._target_listen_only_check.setChecked(bool(enabled))
+        self._apply_target_listen_only_edit()
+
+    def edit_target_tx_echo(self, enabled: bool) -> None:
+        """Set the selected target TX echo flag through the edit control.
+
+        Args:
+            enabled: Whether TX echo should be enabled.
+        """
+        self._target_tx_echo_check.setChecked(bool(enabled))
+        self._apply_target_tx_echo_edit()
+
     def select_route(self, row: int) -> None:
         """Select one route row in the editor.
 
@@ -378,6 +583,22 @@ class ScenariosView(QWidget):
     def trigger_run(self) -> None:
         """Trigger Run for tests and keyboard workflows."""
         self._run_loaded_scenario()
+
+    def trigger_add_device(self) -> None:
+        """Trigger Add Device for tests and keyboard workflows."""
+        self._add_device()
+
+    def trigger_remove_device(self) -> None:
+        """Trigger Remove Device for tests and keyboard workflows."""
+        self._remove_selected_device()
+
+    def trigger_add_target(self) -> None:
+        """Trigger Add Target for tests and keyboard workflows."""
+        self._add_target()
+
+    def trigger_remove_target(self) -> None:
+        """Trigger Remove Target for tests and keyboard workflows."""
+        self._remove_selected_target()
 
     def create_delete_confirmation_dialog(self):
         """Create the delete confirmation dialog for the selected scenario.
@@ -544,15 +765,126 @@ class ScenariosView(QWidget):
         traces.verticalHeader().setVisible(False)
         traces.setColumnWidth(0, 180)
         traces.setColumnWidth(1, 520)
-        devices = QTableView()
-        devices.setModel(self._device_model)
-        devices.verticalHeader().setVisible(False)
-        devices.setColumnWidth(0, 180)
-        devices.setColumnWidth(1, 120)
-        devices.setColumnWidth(2, 160)
-        devices.setColumnWidth(3, 80)
+        layout.addWidget(QLabel("Traces"))
         layout.addWidget(traces)
-        layout.addWidget(devices)
+
+        device_toolbar = QHBoxLayout()
+        self._add_device_button = QPushButton("Add Device")
+        self._add_device_button.setEnabled(False)
+        self._add_device_button.setToolTip("添加一个可编辑 device 配置")
+        self._add_device_button.clicked.connect(self._add_device)
+        device_toolbar.addWidget(self._add_device_button)
+        self._remove_device_button = QPushButton("Remove Device")
+        self._remove_device_button.setEnabled(False)
+        self._remove_device_button.setToolTip("删除未被 target 引用的 device")
+        self._remove_device_button.clicked.connect(self._remove_selected_device)
+        device_toolbar.addWidget(self._remove_device_button)
+        device_toolbar.addStretch(1)
+        layout.addLayout(device_toolbar)
+
+        self._devices_table = QTableView()
+        self._devices_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._devices_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self._devices_table.setModel(self._device_model)
+        self._devices_table.verticalHeader().setVisible(False)
+        self._devices_table.setColumnWidth(0, 150)
+        self._devices_table.setColumnWidth(1, 90)
+        self._devices_table.setColumnWidth(2, 180)
+        self._devices_table.setColumnWidth(3, 120)
+        self._devices_table.setColumnWidth(4, 130)
+        self._devices_table.setColumnWidth(5, 70)
+        self._devices_table.selectionModel().currentRowChanged.connect(
+            lambda _current, _previous: self._handle_device_selection_changed()
+        )
+        layout.addWidget(self._devices_table)
+
+        device_form = QFormLayout()
+        self._device_driver_combo = QComboBox()
+        self._device_driver_combo.setEditable(True)
+        self._device_driver_combo.addItems(["mock", "tongxing"])
+        self._device_driver_combo.currentTextChanged.connect(lambda _text: self._apply_device_driver_edit())
+        self._device_sdk_root_edit = QLineEdit()
+        self._device_sdk_root_edit.editingFinished.connect(self._apply_device_sdk_root_edit)
+        self._device_application_edit = QLineEdit()
+        self._device_application_edit.editingFinished.connect(self._apply_device_application_edit)
+        self._device_type_edit = QLineEdit()
+        self._device_type_edit.editingFinished.connect(self._apply_device_type_edit)
+        self._device_index_spin = QSpinBox()
+        self._device_index_spin.setRange(0, 255)
+        self._device_index_spin.editingFinished.connect(self._apply_device_index_edit)
+        device_form.addRow("Driver", self._device_driver_combo)
+        device_form.addRow("SDK root", self._device_sdk_root_edit)
+        device_form.addRow("Application", self._device_application_edit)
+        device_form.addRow("Device type", self._device_type_edit)
+        device_form.addRow("Device index", self._device_index_spin)
+        layout.addLayout(device_form)
+        self._device_issue_label = QLabel("")
+        self._device_issue_label.setStyleSheet("color: #C2410C;")
+        layout.addWidget(self._device_issue_label)
+
+        target_toolbar = QHBoxLayout()
+        self._add_target_button = QPushButton("Add Target")
+        self._add_target_button.setEnabled(False)
+        self._add_target_button.setToolTip("为当前 device 添加一个 target endpoint")
+        self._add_target_button.clicked.connect(self._add_target)
+        target_toolbar.addWidget(self._add_target_button)
+        self._remove_target_button = QPushButton("Remove Target")
+        self._remove_target_button.setEnabled(False)
+        self._remove_target_button.setToolTip("删除未被 route 引用的 target")
+        self._remove_target_button.clicked.connect(self._remove_selected_target)
+        target_toolbar.addWidget(self._remove_target_button)
+        target_toolbar.addStretch(1)
+        layout.addLayout(target_toolbar)
+
+        self._targets_table = QTableView()
+        self._targets_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._targets_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self._targets_table.setModel(self._target_model)
+        self._targets_table.verticalHeader().setVisible(False)
+        self._targets_table.setColumnWidth(0, 170)
+        self._targets_table.setColumnWidth(1, 120)
+        self._targets_table.setColumnWidth(2, 70)
+        self._targets_table.setColumnWidth(3, 60)
+        self._targets_table.setColumnWidth(4, 100)
+        self._targets_table.setColumnWidth(5, 100)
+        self._targets_table.selectionModel().currentRowChanged.connect(
+            lambda _current, _previous: self._handle_target_selection_changed()
+        )
+        layout.addWidget(self._targets_table)
+
+        target_form = QFormLayout()
+        self._target_device_combo = QComboBox()
+        self._target_device_combo.currentIndexChanged.connect(lambda _index: self._apply_target_device_edit())
+        self._target_bus_combo = QComboBox()
+        self._target_bus_combo.addItems(["CAN", "CANFD"])
+        self._target_bus_combo.currentTextChanged.connect(lambda _text: self._apply_target_bus_edit())
+        self._target_editor_physical_spin = QSpinBox()
+        self._target_editor_physical_spin.setRange(0, 255)
+        self._target_editor_physical_spin.editingFinished.connect(self._apply_target_editor_physical_edit)
+        self._target_nominal_baud_spin = QSpinBox()
+        self._target_nominal_baud_spin.setRange(1, 10_000_000)
+        self._target_nominal_baud_spin.editingFinished.connect(self._apply_target_nominal_baud_edit)
+        self._target_data_baud_spin = QSpinBox()
+        self._target_data_baud_spin.setRange(1, 10_000_000)
+        self._target_data_baud_spin.editingFinished.connect(self._apply_target_data_baud_edit)
+        self._target_resistance_check = QCheckBox("Resistance enabled")
+        self._target_resistance_check.clicked.connect(self._apply_target_resistance_edit)
+        self._target_listen_only_check = QCheckBox("Listen only")
+        self._target_listen_only_check.clicked.connect(self._apply_target_listen_only_edit)
+        self._target_tx_echo_check = QCheckBox("TX echo")
+        self._target_tx_echo_check.clicked.connect(self._apply_target_tx_echo_edit)
+        target_form.addRow("Device", self._target_device_combo)
+        target_form.addRow("Bus", self._target_bus_combo)
+        target_form.addRow("Physical Channel", self._target_editor_physical_spin)
+        target_form.addRow("Nominal baud", self._target_nominal_baud_spin)
+        target_form.addRow("Data baud", self._target_data_baud_spin)
+        target_form.addRow("Resistance", self._target_resistance_check)
+        target_form.addRow("Listen only", self._target_listen_only_check)
+        target_form.addRow("TX echo", self._target_tx_echo_check)
+        layout.addLayout(target_form)
+        self._target_issue_label = QLabel("")
+        self._target_issue_label.setStyleSheet("color: #C2410C;")
+        layout.addWidget(self._target_issue_label)
         return tab
 
     def _build_routes_tab(self) -> QWidget:
@@ -591,6 +923,9 @@ class ScenariosView(QWidget):
         form.addRow("Target", self._route_target_combo)
         form.addRow("Target Physical Channel", self._target_physical_spin)
         layout.addLayout(form)
+        self._route_issue_label = QLabel("")
+        self._route_issue_label.setStyleSheet("color: #C2410C;")
+        layout.addWidget(self._route_issue_label)
         self._routes_table = QTableView()
         self._routes_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._routes_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
@@ -645,14 +980,39 @@ class ScenariosView(QWidget):
     def _show_add_route_dialog(self) -> None:
         dialog = self.create_add_route_dialog()
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            trace, source, logical_channel, physical_channel = dialog.selection()
-            if trace is not None and source is not None:
+            trace, source, logical_channel, target_id = dialog.selection()
+            if trace is not None and source is not None and target_id:
                 self._view_model.add_route_from_trace(
                     trace,
                     source,
                     logical_channel=logical_channel,
-                    physical_channel=physical_channel,
+                    target_id=target_id,
                 )
+
+    def _add_device(self) -> None:
+        if self._replay_active:
+            return
+        self._view_model.add_device()
+
+    def _remove_selected_device(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.remove_device(index)
+
+    def _add_target(self) -> None:
+        if self._replay_active:
+            return
+        device = self._selected_device()
+        self._view_model.add_target(device_id="" if device is None else device.device_id)
+
+    def _remove_selected_target(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.remove_target(index)
 
     def _remove_selected_route(self) -> None:
         if self._replay_active:
@@ -675,7 +1035,7 @@ class ScenariosView(QWidget):
         if self._replay_active:
             return
         draft = self._view_model.draft
-        if draft is None or self._view_model.draft_issues:
+        if draft is None or self._view_model.has_blocking_issues:
             return
         self.runRequested.emit(dict(draft.body), draft.base_dir)
 
@@ -693,13 +1053,34 @@ class ScenariosView(QWidget):
         row = self._selected_row()
         has_draft = self._view_model.draft is not None
         route_index = self._selected_route_index()
+        device_index = self._selected_device_index()
+        target_index = self._selected_target_index()
         has_route = has_draft and route_index >= 0
+        has_device = has_draft and device_index >= 0
+        has_target = has_draft and target_index >= 0
         idle = not self._view_model.busy and not self._replay_active
         self._new_button.setEnabled(idle)
         self._load_button.setEnabled(row is not None and idle)
         self._save_button.setEnabled(has_draft and idle)
         self._validate_button.setEnabled(has_draft and idle)
         self._delete_button.setEnabled(row is not None and idle)
+        self._add_device_button.setEnabled(has_draft and idle)
+        self._remove_device_button.setEnabled(has_device and idle)
+        self._add_target_button.setEnabled(has_draft and idle)
+        self._remove_target_button.setEnabled(has_target and idle)
+        self._device_driver_combo.setEnabled(has_device and idle)
+        self._device_sdk_root_edit.setEnabled(has_device and idle)
+        self._device_application_edit.setEnabled(has_device and idle)
+        self._device_type_edit.setEnabled(has_device and idle)
+        self._device_index_spin.setEnabled(has_device and idle)
+        self._target_device_combo.setEnabled(has_target and idle)
+        self._target_bus_combo.setEnabled(has_target and idle)
+        self._target_editor_physical_spin.setEnabled(has_target and idle)
+        self._target_nominal_baud_spin.setEnabled(has_target and idle)
+        self._target_data_baud_spin.setEnabled(has_target and idle)
+        self._target_resistance_check.setEnabled(has_target and idle)
+        self._target_listen_only_check.setEnabled(has_target and idle)
+        self._target_tx_echo_check.setEnabled(has_target and idle)
         self._add_route_button.setEnabled(has_draft and idle)
         self._remove_route_button.setEnabled(has_route and idle)
         self._name_edit.setEnabled(has_draft and idle)
@@ -708,7 +1089,7 @@ class ScenariosView(QWidget):
         self._route_logical_spin.setEnabled(has_route and idle)
         self._route_target_combo.setEnabled(has_route and idle)
         self._target_physical_spin.setEnabled(has_route and idle)
-        self._run_button.setEnabled(has_draft and not self._view_model.draft_issues and idle)
+        self._run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
 
     def _sync_draft(self) -> None:
         draft = self._view_model.draft
@@ -717,6 +1098,8 @@ class ScenariosView(QWidget):
             self._name_edit.setEnabled(False)
             self._loop_check.setChecked(False)
             self._loop_check.setEnabled(False)
+            self._clear_device_controls()
+            self._clear_target_controls()
             self._route_source_combo.clear()
             self._route_source_combo.setEnabled(False)
             self._route_logical_spin.setValue(0)
@@ -725,9 +1108,11 @@ class ScenariosView(QWidget):
             self._route_target_combo.setEnabled(False)
             self._target_physical_spin.setValue(0)
             self._target_physical_spin.setEnabled(False)
+            self._route_issue_label.setText("")
             self._overview.setPlainText("加载或新建 Scenario 后显示 schema、数量和 base dir。")
             self._trace_model.set_rows(())
             self._device_model.set_rows(())
+            self._target_model.set_rows(())
             self._route_model.set_rows(())
             self._json_preview.setPlainText("加载 Scenario 后显示格式化 JSON。")
         else:
@@ -735,8 +1120,23 @@ class ScenariosView(QWidget):
             self._overview.setPlainText(_draft_detail(draft))
             self._trace_model.set_rows(draft.traces)
             self._device_model.set_rows(draft.devices)
+            self._target_model.set_rows(draft.targets)
             self._route_model.set_rows(draft.routes)
             self._json_preview.setPlainText(draft.json_text)
+            if draft.devices:
+                row = min(max(self._selected_device_index(), 0), len(draft.devices) - 1)
+                self._devices_table.selectRow(row)
+                self._sync_device_controls_for_current_device()
+            else:
+                self._devices_table.clearSelection()
+                self._sync_device_controls_for_current_device()
+            if draft.targets:
+                row = min(max(self._selected_target_index(), 0), len(draft.targets) - 1)
+                self._targets_table.selectRow(row)
+                self._sync_target_controls_for_current_target()
+            else:
+                self._targets_table.clearSelection()
+                self._sync_target_controls_for_current_target()
             if draft.routes:
                 row = min(max(self._selected_route_index(), 0), len(draft.routes) - 1)
                 self._routes_table.selectRow(row)
@@ -754,6 +1154,10 @@ class ScenariosView(QWidget):
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _sync_draft_issues(self) -> None:
+        self._device_issue_label.setText(self._issue_text("devices", self._selected_device_index()))
+        self._target_issue_label.setText(self._issue_text("targets", self._selected_target_index()))
+        self._route_issue_label.setText(self._issue_text("routes", self._selected_route_index()))
+        self._sync_command_buttons()
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _sync_trace_choices(self) -> None:
@@ -775,6 +1179,113 @@ class ScenariosView(QWidget):
         self._loop_check.setChecked(loop)
         self._loop_check.setEnabled(True)
         self._loop_check.blockSignals(False)
+
+    def _clear_device_controls(self) -> None:
+        self._device_driver_combo.blockSignals(True)
+        self._device_driver_combo.setCurrentText("")
+        self._device_driver_combo.setEnabled(False)
+        self._device_driver_combo.blockSignals(False)
+        self._device_sdk_root_edit.setText("")
+        self._device_sdk_root_edit.setEnabled(False)
+        self._device_application_edit.setText("")
+        self._device_application_edit.setEnabled(False)
+        self._device_type_edit.setText("")
+        self._device_type_edit.setEnabled(False)
+        self._device_index_spin.setValue(0)
+        self._device_index_spin.setEnabled(False)
+        self._device_issue_label.setText("")
+
+    def _clear_target_controls(self) -> None:
+        self._target_device_combo.blockSignals(True)
+        self._target_device_combo.clear()
+        self._target_device_combo.setEnabled(False)
+        self._target_device_combo.blockSignals(False)
+        self._target_bus_combo.blockSignals(True)
+        self._target_bus_combo.setCurrentIndex(0)
+        self._target_bus_combo.setEnabled(False)
+        self._target_bus_combo.blockSignals(False)
+        self._target_editor_physical_spin.setValue(0)
+        self._target_editor_physical_spin.setEnabled(False)
+        self._target_nominal_baud_spin.setValue(500000)
+        self._target_nominal_baud_spin.setEnabled(False)
+        self._target_data_baud_spin.setValue(2000000)
+        self._target_data_baud_spin.setEnabled(False)
+        self._target_resistance_check.setChecked(False)
+        self._target_resistance_check.setEnabled(False)
+        self._target_listen_only_check.setChecked(False)
+        self._target_listen_only_check.setEnabled(False)
+        self._target_tx_echo_check.setChecked(False)
+        self._target_tx_echo_check.setEnabled(False)
+        self._target_issue_label.setText("")
+
+    def _sync_device_controls_for_current_device(self) -> None:
+        device = self._selected_device()
+        if device is None:
+            self._clear_device_controls()
+            self._sync_command_buttons()
+            return
+        self._device_driver_combo.blockSignals(True)
+        index = self._combo_index_for_text(self._device_driver_combo, device.driver)
+        if index < 0:
+            self._device_driver_combo.addItem(device.driver)
+            index = self._combo_index_for_text(self._device_driver_combo, device.driver)
+        self._device_driver_combo.setCurrentIndex(index)
+        self._device_driver_combo.blockSignals(False)
+        self._device_sdk_root_edit.blockSignals(True)
+        self._device_sdk_root_edit.setText(device.sdk_root)
+        self._device_sdk_root_edit.blockSignals(False)
+        self._device_application_edit.blockSignals(True)
+        self._device_application_edit.setText(device.application)
+        self._device_application_edit.blockSignals(False)
+        self._device_type_edit.blockSignals(True)
+        self._device_type_edit.setText(device.device_type)
+        self._device_type_edit.blockSignals(False)
+        self._device_index_spin.blockSignals(True)
+        self._device_index_spin.setValue(device.device_index)
+        self._device_index_spin.blockSignals(False)
+        self._device_issue_label.setText(self._issue_text("devices", self._selected_device_index()))
+        self._sync_command_buttons()
+
+    def _sync_target_controls_for_current_target(self) -> None:
+        target = self._selected_target()
+        draft = self._view_model.draft
+        if target is None or draft is None:
+            self._clear_target_controls()
+            self._sync_command_buttons()
+            return
+        self._target_device_combo.blockSignals(True)
+        self._target_device_combo.clear()
+        for device in draft.devices:
+            self._target_device_combo.addItem(device.device_id, device.device_id)
+        device_index = self._combo_index_for_data(self._target_device_combo, target.device_id)
+        if device_index >= 0:
+            self._target_device_combo.setCurrentIndex(device_index)
+        self._target_device_combo.blockSignals(False)
+        self._target_bus_combo.blockSignals(True)
+        bus_index = self._combo_index_for_text(self._target_bus_combo, target.bus)
+        if bus_index >= 0:
+            self._target_bus_combo.setCurrentIndex(bus_index)
+        self._target_bus_combo.blockSignals(False)
+        self._target_editor_physical_spin.blockSignals(True)
+        self._target_editor_physical_spin.setValue(target.physical_channel)
+        self._target_editor_physical_spin.blockSignals(False)
+        self._target_nominal_baud_spin.blockSignals(True)
+        self._target_nominal_baud_spin.setValue(target.nominal_baud)
+        self._target_nominal_baud_spin.blockSignals(False)
+        self._target_data_baud_spin.blockSignals(True)
+        self._target_data_baud_spin.setValue(target.data_baud)
+        self._target_data_baud_spin.blockSignals(False)
+        self._target_resistance_check.blockSignals(True)
+        self._target_resistance_check.setChecked(target.resistance_enabled)
+        self._target_resistance_check.blockSignals(False)
+        self._target_listen_only_check.blockSignals(True)
+        self._target_listen_only_check.setChecked(target.listen_only)
+        self._target_listen_only_check.blockSignals(False)
+        self._target_tx_echo_check.blockSignals(True)
+        self._target_tx_echo_check.setChecked(target.tx_echo)
+        self._target_tx_echo_check.blockSignals(False)
+        self._target_issue_label.setText(self._issue_text("targets", self._selected_target_index()))
+        self._sync_command_buttons()
 
     def _sync_edit_controls_for_current_route(self) -> None:
         draft = self._view_model.draft
@@ -808,6 +1319,7 @@ class ScenariosView(QWidget):
         target = self._selected_route_target()
         self._target_physical_spin.setValue(target.physical_channel if target is not None else 0)
         self._target_physical_spin.blockSignals(False)
+        self._route_issue_label.setText(self._issue_text("routes", route_index))
         self._sync_command_buttons()
 
     def _apply_name_edit(self) -> None:
@@ -824,6 +1336,98 @@ class ScenariosView(QWidget):
         draft = self._view_model.draft
         if draft is not None:
             self._view_model.set_timeline_loop(self._loop_check.isChecked())
+
+    def _apply_device_driver_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.set_device_driver(index, self._device_driver_combo.currentText())
+
+    def _apply_device_sdk_root_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.set_device_sdk_root(index, self._device_sdk_root_edit.text())
+
+    def _apply_device_application_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.set_device_application(index, self._device_application_edit.text())
+
+    def _apply_device_type_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.set_device_type(index, self._device_type_edit.text())
+
+    def _apply_device_index_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_device_index()
+        if index >= 0:
+            self._view_model.set_device_index(index, self._device_index_spin.value())
+
+    def _apply_target_device_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        device_id = self._target_device_combo.currentData()
+        if index >= 0 and device_id is not None:
+            self._view_model.set_target_device(index, str(device_id))
+
+    def _apply_target_bus_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_bus(index, self._target_bus_combo.currentText())
+
+    def _apply_target_editor_physical_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_physical_channel(index, self._target_editor_physical_spin.value())
+
+    def _apply_target_nominal_baud_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_nominal_baud(index, self._target_nominal_baud_spin.value())
+
+    def _apply_target_data_baud_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_data_baud(index, self._target_data_baud_spin.value())
+
+    def _apply_target_resistance_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_resistance_enabled(index, self._target_resistance_check.isChecked())
+
+    def _apply_target_listen_only_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_listen_only(index, self._target_listen_only_check.isChecked())
+
+    def _apply_target_tx_echo_edit(self) -> None:
+        if self._replay_active:
+            return
+        index = self._selected_target_index()
+        if index >= 0:
+            self._view_model.set_target_tx_echo(index, self._target_tx_echo_check.isChecked())
 
     def _apply_route_logical_edit(self) -> None:
         if self._replay_active:
@@ -863,6 +1467,15 @@ class ScenariosView(QWidget):
         self._sync_edit_controls_for_current_route()
         self._emit_selection()
 
+    def _handle_device_selection_changed(self) -> None:
+        self._sync_device_controls_for_current_device()
+        self._emit_selection()
+
+    def _handle_target_selection_changed(self) -> None:
+        self._sync_target_controls_for_current_target()
+        self._sync_edit_controls_for_current_route()
+        self._emit_selection()
+
     def _emit_selection(self) -> None:
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
@@ -880,6 +1493,36 @@ class ScenariosView(QWidget):
             return -1
         row = current.row()
         return row if 0 <= row < len(draft.routes) else -1
+
+    def _selected_device_index(self) -> int:
+        draft = self._view_model.draft
+        current = self._devices_table.currentIndex()
+        if draft is None or not current.isValid():
+            return -1
+        row = current.row()
+        return row if 0 <= row < len(draft.devices) else -1
+
+    def _selected_target_index(self) -> int:
+        draft = self._view_model.draft
+        current = self._targets_table.currentIndex()
+        if draft is None or not current.isValid():
+            return -1
+        row = current.row()
+        return row if 0 <= row < len(draft.targets) else -1
+
+    def _selected_device(self) -> DraftDeviceRow | None:
+        draft = self._view_model.draft
+        index = self._selected_device_index()
+        if draft is None or index < 0:
+            return None
+        return draft.devices[index]
+
+    def _selected_target(self) -> DraftTargetRow | None:
+        draft = self._view_model.draft
+        index = self._selected_target_index()
+        if draft is None or index < 0:
+            return None
+        return draft.targets[index]
 
     def _selected_route_target_index(self) -> int:
         target = self._selected_route_target()
@@ -909,6 +1552,22 @@ class ScenariosView(QWidget):
             if combo.itemData(index) == value:
                 return index
         return -1
+
+    def _combo_index_for_text(self, combo: QComboBox, value: object) -> int:
+        for index in range(combo.count()):
+            if combo.itemText(index) == str(value):
+                return index
+        return -1
+
+    def _issue_text(self, section: str, row: int) -> str:
+        if row < 0:
+            return ""
+        messages = [
+            f"{issue.field}: {issue.message}"
+            for issue in self._view_model.draft_issues
+            if issue.section == section and issue.row == row
+        ]
+        return "\n".join(messages)
 
 
 def _scenario_detail(row: ScenarioRow) -> str:
@@ -1114,18 +1773,18 @@ class AddRouteDialog(QDialog):
         self._build_ui()
         self._sync_trace_choices()
 
-    def selection(self) -> tuple[ScenarioTraceChoice | None, ScenarioSourceChoice | None, int, int]:
+    def selection(self) -> tuple[ScenarioTraceChoice | None, ScenarioSourceChoice | None, int, str]:
         """Return the selected route ingredients.
 
         Returns:
             Tuple of selected trace, selected trace source, logical channel,
-            and mock target physical channel.
+            and existing target ID.
         """
         return (
             self._current_trace(),
             self._current_source(),
             self._logical_spin.value(),
-            self._physical_spin.value(),
+            self._current_target_id(),
         )
 
     def has_add_action(self) -> bool:
@@ -1148,8 +1807,8 @@ class AddRouteDialog(QDialog):
                 self._empty_label.text(),
                 self._trace_combo.currentText(),
                 self._source_combo.currentText(),
+                self._target_combo.currentText(),
                 f"Logical Channel: {self._logical_spin.value()}",
-                f"Physical Channel: {self._physical_spin.value()}",
             )
         )
 
@@ -1159,15 +1818,14 @@ class AddRouteDialog(QDialog):
         form = QFormLayout()
         self._trace_combo = QComboBox()
         self._source_combo = QComboBox()
+        self._target_combo = QComboBox()
         self._logical_spin = QSpinBox()
         self._logical_spin.setRange(0, 255)
-        self._physical_spin = QSpinBox()
-        self._physical_spin.setRange(0, 255)
         self._trace_combo.currentIndexChanged.connect(self._handle_trace_changed)
         form.addRow("Trace", self._trace_combo)
         form.addRow("Source", self._source_combo)
+        form.addRow("Target", self._target_combo)
         form.addRow("Logical Channel", self._logical_spin)
-        form.addRow("Physical Channel", self._physical_spin)
         layout.addLayout(form)
         self._empty_label = QLabel("")
         layout.addWidget(self._empty_label)
@@ -1186,6 +1844,7 @@ class AddRouteDialog(QDialog):
         else:
             self._empty_label.setText("No imported traces. Import ASC in Trace Library first.")
             self._source_combo.clear()
+            self._sync_targets()
             self._sync_default_channels()
             self._sync_ok_button()
 
@@ -1194,6 +1853,7 @@ class AddRouteDialog(QDialog):
         self._source_combo.clear()
         self._source_choices = ()
         if trace is None:
+            self._sync_targets()
             self._sync_default_channels()
             self._sync_ok_button()
             return
@@ -1209,17 +1869,26 @@ class AddRouteDialog(QDialog):
             self._empty_label.setText("Selected trace has no source summaries.")
         else:
             self._empty_label.setText("")
+        self._sync_targets()
         self._sync_default_channels()
         self._sync_ok_button()
 
     def _sync_default_channels(self) -> None:
         logical = _next_route_logical_channel(self._view_model.draft)
         self._logical_spin.setValue(logical)
-        self._physical_spin.setValue(logical)
+
+    def _sync_targets(self) -> None:
+        self._target_combo.clear()
+        for choice in self._view_model.target_endpoint_choices:
+            self._target_combo.addItem(choice.label, choice.target_id)
+        if self._target_combo.count() == 0 and not self._empty_label.text():
+            self._empty_label.setText("Current draft has no targets. Add a target first.")
 
     def _sync_ok_button(self) -> None:
         self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            self._current_trace() is not None and self._current_source() is not None
+            self._current_trace() is not None
+            and self._current_source() is not None
+            and bool(self._current_target_id())
         )
 
     def _current_trace(self) -> ScenarioTraceChoice | None:
@@ -1229,6 +1898,10 @@ class AddRouteDialog(QDialog):
     def _current_source(self) -> ScenarioSourceChoice | None:
         value = self._source_combo.currentData()
         return value if isinstance(value, ScenarioSourceChoice) else None
+
+    def _current_target_id(self) -> str:
+        value = self._target_combo.currentData()
+        return "" if value is None else str(value)
 
 
 def _next_route_logical_channel(draft: ScenarioDraft | None) -> int:

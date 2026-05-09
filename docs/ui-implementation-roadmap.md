@@ -12,7 +12,7 @@
 - Replay Monitor 已接入第一批非阻塞 Mock replay session：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
 - Devices 已接入第一批 app 层枚举闭环：可编辑 driver / SDK root / application / device type / device index，并展示 device info / capabilities / health / channels。
 - Settings 仍是结构化占位。
-- Scenario Editor 的真实设备 target 选择、完整字段就近错误提示、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
+- Scenario Editor 已接入多 device / target 参数编辑和现有 target 路由选择；DBC / Signal Override、Diagnostics、DoIP、ZLG、BLF、Settings 产品化、真实窗口点击、高 DPI 和 Windows 硬件 UI 验证尚未完成。
 
 ## 1. 实现原则
 
@@ -43,7 +43,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M0 UI 壳层基线 | `Done` | 可启动工作台壳层，读取 Trace / Scenario 列表 | PySide6、现有 app 层列表 API | `replay-ui` 可启动，offscreen smoke test 和 ViewModel 单测通过 |
 | M1 UI 底座加固 | `Done` | 异步任务、统一错误和通用组件 | 当前 UI 壳层 | Trace / Scenario 刷新已接入异步任务，busy/error/status badge 模式统一 |
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
-| M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 多 route draft 编辑、保存、Validate 已接入；Run 待 M4 |
+| M3 Scenario Editor 可视化编辑闭环 | `Done` | UI 编辑 schema v2 scenario、device、target 和 routes | M1、ProjectStore、planner 校验 | 多 route / device / target draft 编辑、保存、Validate 和 Mock Run 已接入 |
 | M4 Replay Monitor 运行会话闭环 | `In Progress` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | 第一批已支持 Mock draft 从 UI 运行到完成 |
 | M5 Devices 设备枚举与配置闭环 | `In Progress` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | 第一批已支持 mock 枚举和设备结果展示 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
@@ -244,6 +244,20 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - 真实设备 target 选择、多设备配置、完整字段级就近错误提示和 UI Run 仍未完成。
 
 第四批验收证据：
+
+- `tests/test_ui_view_models.py`
+- `tests/test_ui_views.py`
+
+第五批已交付：
+
+- `ScenarioDraft` 已扩展 device / target 行字段，可展示和编辑 driver、SDK root、application、device type、device index、target device、bus、physical channel、nominal / data baud、resistance、listen only 和 TX echo。
+- Scenarios ViewModel 已增加 Add / Remove Device、Add / Remove Target，以及 target/device 字段编辑命令；删除被引用的 device / target 会被拒绝并以 warning draft issue 反馈，不做隐式级联删除。
+- Traces & Devices tab 已升级为 trace 列表、device 编辑区和 target 编辑区；Routes tab 和 Add Route dialog 使用当前 draft 已有 target 下拉，不再只能隐式创建 mock target。
+- Scenarios 页面 Run 当前 draft 已接入 M4 非阻塞 replay session；运行期间 Save、Validate、Run、route、device 和 target 关键编辑入口会被锁定。
+- Draft issue 会继续显示在 Inspector，并在当前选中 device / target / route 编辑区附近显示第一批就近提示。
+- 本批仅覆盖 mock / app 层和 offscreen UI 自动化；真实窗口点击、高 DPI 和 Windows 同星真机 UI 验证未执行。
+
+第五批验收证据：
 
 - `tests/test_ui_view_models.py`
 - `tests/test_ui_views.py`
