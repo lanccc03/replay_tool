@@ -3,6 +3,42 @@ from __future__ import annotations
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QVBoxLayout, QWidget
 
 
+class DangerConfirmationBox(QMessageBox):
+    """QMessageBox with a stable title accessor across Qt backends.
+
+    Some QMessageBox backends, including the offscreen backend used by tests,
+    ignore the QWidget window title even after setWindowTitle() is called. This
+    subclass preserves the requested title so tests and accessibility helpers
+    can inspect the same action label that callers pass to the dialog factory.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Create a confirmation message box.
+
+        Args:
+            parent: Optional parent widget.
+        """
+        super().__init__(parent)
+        self._stable_window_title = ""
+
+    def setWindowTitle(self, title: str) -> None:  # noqa: N802 - Qt API name
+        """Set the dialog title and preserve it for later inspection.
+
+        Args:
+            title: Human-readable dialog title.
+        """
+        self._stable_window_title = str(title)
+        super().setWindowTitle(self._stable_window_title)
+
+    def windowTitle(self) -> str:  # noqa: N802 - Qt API name
+        """Return the title requested through setWindowTitle().
+
+        Returns:
+            Stable title text, or the Qt-provided value if no title was set.
+        """
+        return self._stable_window_title or super().windowTitle()
+
+
 def create_danger_confirmation(
     parent: QWidget | None,
     *,
@@ -25,7 +61,7 @@ def create_danger_confirmation(
     target = str(object_label)
     if object_id:
         target = f"{target} ({object_id})"
-    box = QMessageBox(parent)
+    box = DangerConfirmationBox(parent)
     box.setIcon(QMessageBox.Icon.Warning)
     box.setWindowTitle(str(action))
     box.setText(f"确认执行 {action}？")
@@ -124,4 +160,3 @@ def create_error_details_dialog(
         Configured error details dialog.
     """
     return ErrorDetailsDialog(parent, title=title, summary=summary, detail=detail)
-
