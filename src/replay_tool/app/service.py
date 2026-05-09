@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from replay_tool.adapters.mock import MockDevice
 from replay_tool.adapters.tongxing import TongxingDevice
+from replay_tool.app.devices import DeviceEnumerationResult
 from replay_tool.app.session import ReplaySession
 from replay_tool.domain import DeviceConfig, ReplayScenario, TraceConfig
 from replay_tool.planning import ReplayPlan, ReplayPlanner
@@ -332,6 +333,52 @@ class ReplayApplication:
             ValueError: If the registry has no factory for the driver.
         """
         return self.registry.create(config)
+
+    def list_device_drivers(self) -> tuple[str, ...]:
+        """List registered device driver identifiers.
+
+        Returns:
+            Sorted driver names registered in the application registry.
+        """
+        return self.registry.drivers()
+
+    def enumerate_device(self, config: DeviceConfig) -> DeviceEnumerationResult:
+        """Open, inspect, and close one configured device adapter.
+
+        Args:
+            config: Device configuration containing the driver and adapter
+                parameters.
+
+        Returns:
+            Device descriptor, available channels, capabilities, and health
+            sampled before the adapter is closed.
+
+        Raises:
+            ValueError: If the registry has no factory for the driver.
+            RuntimeError: If the adapter cannot open or enumerate.
+        """
+        device = self.registry.create(config)
+        error: BaseException | None = None
+        try:
+            info = device.open()
+            channels = tuple(int(channel) for channel in device.enumerate_channels())
+            capabilities = device.capabilities()
+            health = device.health()
+            return DeviceEnumerationResult(
+                info=info,
+                channels=channels,
+                capabilities=capabilities,
+                health=health,
+            )
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
+            try:
+                device.close()
+            except Exception:
+                if error is None:
+                    raise
 
     def _load_scenario_reference(self, scenario_ref: str | Path) -> tuple[ReplayScenario, Path]:
         raw_ref = str(scenario_ref)

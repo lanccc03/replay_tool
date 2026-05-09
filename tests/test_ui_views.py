@@ -13,8 +13,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from replay_tool.app import ReplaySessionSummary
-from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, ReplaySnapshot, ReplayState
+from replay_tool.app import DeviceEnumerationResult, ReplaySessionSummary
+from replay_tool.domain import (
+    BusType,
+    ChannelConfig,
+    DeviceCapabilities,
+    DeviceConfig,
+    DeviceHealth,
+    DeviceInfo,
+    ReplaySnapshot,
+    ReplayState,
+)
 from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
@@ -25,10 +34,11 @@ from replay_tool.ports.trace_store import (
     TraceSourceSummary,
 )
 from replay_ui_qt.tasks import TaskRunner
+from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioSourceChoice, ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
-from replay_ui_qt.views.placeholders import ReplayMonitorView
+from replay_ui_qt.views.placeholders import DevicesView, ReplayMonitorView
 from replay_ui_qt.views.scenarios_view import ScenariosView
 from replay_ui_qt.views.trace_library_view import TraceLibraryView
 
@@ -243,6 +253,33 @@ class _ReplayApp:
         return self.session
 
 
+class _DevicesApp:
+    def __init__(
+        self,
+        *,
+        drivers: tuple[str, ...] = ("mock", "tongxing"),
+        result: DeviceEnumerationResult | None = None,
+        error: Exception | None = None,
+        release: threading.Event | None = None,
+    ) -> None:
+        self.drivers = drivers
+        self.result = result or _device_result()
+        self.error = error
+        self.release = release
+        self.configs: list[DeviceConfig] = []
+
+    def list_device_drivers(self) -> tuple[str, ...]:
+        return self.drivers
+
+    def enumerate_device(self, config: DeviceConfig) -> DeviceEnumerationResult:
+        self.configs.append(config)
+        if self.release is not None:
+            self.release.wait(timeout=5)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
 def _runner() -> TaskRunner:
     return TaskRunner(QThreadPool())
 
@@ -295,6 +332,25 @@ def _inspection(record: TraceRecord) -> TraceInspection:
     )
 
 
+def _device_result(*, channel_count: int = 4) -> DeviceEnumerationResult:
+    return DeviceEnumerationResult(
+        info=DeviceInfo(
+            id="mock0",
+            driver="mock",
+            name="MockBench",
+            serial_number="MOCK-001",
+            channel_count=channel_count,
+        ),
+        channels=tuple(range(channel_count)),
+        capabilities=DeviceCapabilities(can=True, canfd=True, async_send=True, fifo_read=True),
+        health=DeviceHealth(
+            online=True,
+            detail="Mock online.",
+            per_channel={index: True for index in range(channel_count)},
+        ),
+    )
+
+
 def _scenario_body() -> dict[str, object]:
     return {
         "schema_version": 2,
@@ -336,6 +392,86 @@ def _replay_plan(name: str = "demo-scenario") -> ReplayPlan:
         timeline_size=4,
         total_ts_ns=800,
     )
+
+
+class DevicesViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication(["test-ui-devices-view"])
+
+    def test_fields_are_editable_and_enumeration_result_is_rendered(self) -> None:
+        devices_app = _DevicesApp(result=_device_result(channel_count=4))
+        view_model = DevicesViewModel(devices_app, _runner())
+        view = DevicesView(view_model)
+        try:
+            self.assertTrue(view.enumerate_enabled())
+            self.assertEqual(("Idle", "default"), view.status_badge_state())
+
+            view.set_driver("mock")
+            view.edit_sdk_root("C:/sdk")
+            view.edit_application("BenchApp")
+            view.edit_device_type("MOCK")
+            view.edit_device_index(2)
+            view.trigger_enumerate()
+            _wait_for(lambda: not view_model.busy and view.channel_row_count() == 4, self._app)
+
+            self.assertEqual("mock", devices_app.configs[0].driver)
+            self.assertEqual("C:/sdk", devices_app.configs[0].sdk_root)
+            self.assertEqual("BenchApp", devices_app.configs[0].application)
+            self.assertEqual("MOCK", devices_app.configs[0].device_type)
+            self.assertEqual(2, devices_app.configs[0].device_index)
+            self.assertIn("MockBench", view.summary_text())
+            self.assertIn("Health: Online", view.summary_text())
+            self.assertEqual(4, view.capability_row_count())
+            self.assertEqual(("Ready", "ready"), view.status_badge_state())
+            title, body = view.inspector_snapshot()
+            self.assertEqual("Device Enumeration", title)
+            self.assertIn("Driver: mock", body)
+        finally:
+            view.close()
+            self._app.processEvents()
+
+    def test_enumerate_busy_disables_fields_and_button(self) -> None:
+        release = threading.Event()
+        devices_app = _DevicesApp(release=release)
+        view_model = DevicesViewModel(devices_app, _runner())
+        view = DevicesView(view_model)
+        try:
+            view.trigger_enumerate()
+            _wait_for(
+                lambda: not view.enumerate_enabled()
+                and view.status_badge_state() == ("Enumerating", "running"),
+                self._app,
+            )
+
+            release.set()
+            _wait_for(lambda: view.enumerate_enabled(), self._app)
+        finally:
+            release.set()
+            view.close()
+            self._app.processEvents()
+
+    def test_error_details_button_and_dialog_follow_device_error_state(self) -> None:
+        view_model = DevicesViewModel(
+            _DevicesApp(error=RuntimeError("hardware missing")),
+            _runner(),
+        )
+        view = DevicesView(view_model)
+        try:
+            self.assertFalse(view.error_details_enabled())
+            view.trigger_enumerate()
+            _wait_for(lambda: view.error_details_enabled(), self._app)
+
+            self.assertEqual(("Failed", "failed"), view.status_badge_state())
+            dialog = view.create_error_dialog()
+            try:
+                self.assertIn("Devices 枚举失败", dialog.detail_text())
+                self.assertIn("hardware missing", dialog.detail_text())
+            finally:
+                dialog.close()
+        finally:
+            view.close()
+            self._app.processEvents()
 
 
 class TraceLibraryViewTests(unittest.TestCase):

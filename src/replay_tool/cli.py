@@ -206,11 +206,10 @@ def main(argv: list[str] | None = None) -> int:
                 device_type=args.device_type,
                 device_index=args.device_index,
             )
-            device = app.create_device(config)
-            info = device.open()
-            channels = device.enumerate_channels()
+            result = app.enumerate_device(config)
+            info = result.info
+            channels = result.channels
             print(f"{info.driver}:{info.name} serial={info.serial_number} channels={list(channels)}")
-            device.close()
             return 0
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

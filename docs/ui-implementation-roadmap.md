@@ -10,7 +10,8 @@
 - Trace Library 已完成 Import ASC、Inspect、Rebuild Cache、Delete Trace 和 Refresh 工作流。
 - Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为可编辑 draft，支持新建最小 draft、多 route 编辑、保存、校验和删除。
 - Replay Monitor 已接入第一批非阻塞 Mock replay session：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
-- Devices 和 Settings 仍是结构化占位。
+- Devices 已接入第一批 app 层枚举闭环：可编辑 driver / SDK root / application / device type / device index，并展示 device info / capabilities / health / channels。
+- Settings 仍是结构化占位。
 - Scenario Editor 的真实设备 target 选择、完整字段就近错误提示、完整运行控制、设备枚举、DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF UI 工作流尚未完成。
 
 ## 1. 实现原则
@@ -44,7 +45,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M2 Trace Library 完整工作流 | `Done` | UI 完成 trace 导入、查看、重建、删除 | M1、TraceStore app 用例 | Trace Library 常用闭环已接入 UI 和自动化测试 |
 | M3 Scenario Editor 可视化编辑闭环 | `In Progress` | UI 编辑 schema v2 scenario 和 routes | M1、ProjectStore、planner 校验 | 多 route draft 编辑、保存、Validate 已接入；Run 待 M4 |
 | M4 Replay Monitor 运行会话闭环 | `In Progress` | UI 编译、运行、暂停、恢复、停止和监控 snapshot | M1、app 层非阻塞 replay session API | 第一批已支持 Mock draft 从 UI 运行到完成 |
-| M5 Devices 设备枚举与配置闭环 | `Planned` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | fake/Mock 自动化通过；同星 UI 真机验证有手工记录 |
+| M5 Devices 设备枚举与配置闭环 | `In Progress` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | 第一批已支持 mock 枚举和设备结果展示 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
 | M7 Diagnostics UI | `Blocked` | CAN ISO-TP / UDS / DoIP 诊断动作界面 | DiagnosticClient port、diagnostic timeline item | 诊断动作进入 ReplayPlan 并由 runtime 分发 |
 | M8 产品化收尾 | `Planned` | 高 DPI、可访问性、深色主题、打包与手工验证 | M2-M5 至少形成工作流闭环 | UI 验证记录完整，可用于日常工程使用 |
@@ -293,7 +294,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 ### M5：Devices 设备枚举与配置闭环
 
-状态：`Planned`
+状态：`In Progress`
 
 目标：
 
@@ -305,6 +306,13 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - 设备枚举动作通过 app 层 API 调用。
 - 设备信息、serial number、channel count、capabilities、health 状态表。
 - 同星真机操作明确标注 Windows + TSMaster + 实际设备要求。
+
+第一批已交付：
+
+- `ReplayApplication.list_device_drivers()` 和 `enumerate_device()` 已提供 app 层设备枚举 API，UI 不直接 import 硬件 adapter。
+- Devices 页面已提供 driver、SDK root、application、device type、device index 编辑入口和 Enumerate 操作。
+- Devices 页面已展示 device info、serial number、channel count、capabilities、health 和 physical channel rows。
+- mock 枚举路径已有 app / ViewModel / View 自动化测试；同星真机 UI 点击验证、高 DPI 和真实窗口点击未执行。
 
 验收标准：
 

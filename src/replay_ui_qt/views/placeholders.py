@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -11,15 +12,20 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSpinBox,
+    QTableView,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from replay_ui_qt.app_context import AppContext
+from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.widgets.dialogs import create_danger_confirmation, create_error_details_dialog
 from replay_ui_qt.widgets.empty_state import EmptyState
 from replay_ui_qt.widgets.status_badge import StatusBadge
+from replay_ui_qt.widgets.table_model import ObjectTableModel, TableColumn
 
 
 class ReplayMonitorView(QWidget):
@@ -317,14 +323,41 @@ def _state_semantic(state: str) -> str:
 
 
 class DevicesView(QWidget):
-    """First-stage devices page with disabled hardware actions."""
+    """Devices page with editable enumeration config and app-layer results."""
 
     inspectorChanged = Signal(str, str)
 
-    def __init__(self) -> None:
-        """Create the devices placeholder view."""
+    def __init__(self, view_model: DevicesViewModel) -> None:
+        """Create the devices view.
+
+        Args:
+            view_model: ViewModel that enumerates devices through the app layer.
+        """
         super().__init__()
+        self._view_model = view_model
+        self._capability_model = ObjectTableModel(
+            (
+                TableColumn("Capability", lambda row: row.name),
+                TableColumn("Supported", lambda row: "Yes" if row.supported else "No"),
+            )
+        )
+        self._channel_model = ObjectTableModel(
+            (
+                TableColumn("Physical Channel", lambda row: row.physical_channel, align_right=True),
+                TableColumn("Status", lambda row: row.status),
+            )
+        )
         self._build_ui()
+        self._view_model.configChanged.connect(self._sync_config)
+        self._view_model.resultChanged.connect(self._sync_result)
+        self._view_model.busyChanged.connect(self._sync_busy)
+        self._view_model.errorChanged.connect(self._sync_error)
+        self._view_model.statusMessageChanged.connect(
+            lambda message: self.inspectorChanged.emit("Devices", message)
+        )
+        self._sync_config()
+        self._sync_result()
+        self._sync_busy(self._view_model.busy)
 
     def inspector_snapshot(self) -> tuple[str, str]:
         """Return the current inspector content for this page.
@@ -332,9 +365,140 @@ class DevicesView(QWidget):
         Returns:
             Tuple of title and body text.
         """
+        if self._view_model.error:
+            return ("Devices 错误", self._view_model.error)
+        summary = self._view_model.summary
+        if summary is not None:
+            return (
+                "Device Enumeration",
+                "\n".join(
+                    (
+                        f"Device ID: {summary.device_id}",
+                        f"Driver: {summary.driver}",
+                        f"Name: {summary.name}",
+                        f"Serial: {summary.serial_number}",
+                        f"Channels: {summary.channel_count}",
+                        f"Health: {summary.health}",
+                        f"Detail: {summary.health_detail}",
+                    )
+                ),
+            )
         return (
             "Devices",
-            "同星真机能力只能在 Windows + TSMaster + 实际设备上验证；本阶段不执行硬件枚举。",
+            "同星真机能力只能在 Windows + TSMaster + 实际设备上验证；自动化优先覆盖 mock 枚举。",
+        )
+
+    def enumerate_enabled(self) -> bool:
+        """Return whether Enumerate is enabled.
+
+        Returns:
+            True when device enumeration can start.
+        """
+        return self._enumerate_button.isEnabled()
+
+    def error_details_enabled(self) -> bool:
+        """Return whether error details can be opened.
+
+        Returns:
+            True when a device error exists.
+        """
+        return self._error_button.isEnabled()
+
+    def status_badge_state(self) -> tuple[str, str]:
+        """Return status badge text and semantic key.
+
+        Returns:
+            Tuple of visible text and semantic state.
+        """
+        return self._status_badge.text(), self._status_badge.semantic
+
+    def set_driver(self, driver: str) -> None:
+        """Set the selected driver through the combo box.
+
+        Args:
+            driver: Driver identifier to select.
+        """
+        index = self._combo_index_for_text(self._driver_combo, driver)
+        if index < 0:
+            self._driver_combo.addItem(str(driver))
+            index = self._combo_index_for_text(self._driver_combo, driver)
+        self._driver_combo.setCurrentIndex(index)
+
+    def edit_sdk_root(self, value: str) -> None:
+        """Set SDK root text for tests and keyboard workflows.
+
+        Args:
+            value: New SDK root.
+        """
+        self._sdk_root_edit.setText(str(value))
+        self._apply_sdk_root()
+
+    def edit_application(self, value: str) -> None:
+        """Set application text for tests and keyboard workflows.
+
+        Args:
+            value: New application name.
+        """
+        self._application_edit.setText(str(value))
+        self._apply_application()
+
+    def edit_device_type(self, value: str) -> None:
+        """Set device type text for tests and keyboard workflows.
+
+        Args:
+            value: New device type.
+        """
+        self._device_type_edit.setText(str(value))
+        self._apply_device_type()
+
+    def edit_device_index(self, value: int) -> None:
+        """Set device index for tests and keyboard workflows.
+
+        Args:
+            value: New device index.
+        """
+        self._device_index_spin.setValue(int(value))
+        self._apply_device_index()
+
+    def trigger_enumerate(self) -> None:
+        """Trigger device enumeration for tests and keyboard workflows."""
+        self._view_model.enumerate_current_device()
+
+    def summary_text(self) -> str:
+        """Return summary text from the result panel.
+
+        Returns:
+            Plain text shown in the summary panel.
+        """
+        return self._summary_text.toPlainText()
+
+    def channel_row_count(self) -> int:
+        """Return rendered channel row count.
+
+        Returns:
+            Number of channel table rows.
+        """
+        return self._channel_model.rowCount()
+
+    def capability_row_count(self) -> int:
+        """Return rendered capability row count.
+
+        Returns:
+            Number of capability table rows.
+        """
+        return self._capability_model.rowCount()
+
+    def create_error_dialog(self):
+        """Create the current Devices error details dialog.
+
+        Returns:
+            Error details dialog for the current ViewModel error.
+        """
+        return create_error_details_dialog(
+            self,
+            title="Devices 错误",
+            summary="Devices 枚举失败",
+            detail=self._view_model.error,
         )
 
     def _build_ui(self) -> None:
@@ -342,34 +506,173 @@ class DevicesView(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        toolbar = QHBoxLayout()
+        self._enumerate_button = QPushButton("Enumerate")
+        self._enumerate_button.setToolTip("通过 app 层枚举当前设备配置")
+        self._enumerate_button.clicked.connect(self._view_model.enumerate_current_device)
+        toolbar.addWidget(self._enumerate_button)
+        self._error_button = QPushButton("错误详情")
+        self._error_button.setEnabled(False)
+        self._error_button.setToolTip("查看可复制的设备枚举错误")
+        self._error_button.clicked.connect(self._show_error_details)
+        toolbar.addWidget(self._error_button)
+        self._status_badge = StatusBadge("Idle", "default")
+        toolbar.addWidget(self._status_badge)
+        toolbar.addStretch(1)
+        layout.addLayout(toolbar)
+
         form_frame = QFrame()
         form_frame.setStyleSheet("background: #FFFFFF; border: 1px solid #D8DEE6; border-radius: 6px;")
         form = QFormLayout(form_frame)
         form.setContentsMargins(16, 16, 16, 16)
-        for label, value in (
-            ("Driver", "tongxing"),
-            ("SDK root", "TSMaster/Windows"),
-            ("Application", "ReplayTool"),
-            ("Device type", "TC1014"),
-            ("Device index", "0"),
-        ):
-            field = QLineEdit(value)
-            field.setEnabled(False)
-            field.setToolTip("后续接入设备枚举")
-            form.addRow(label, field)
+        self._driver_combo = QComboBox()
+        for driver in self._view_model.drivers:
+            self._driver_combo.addItem(driver)
+        self._driver_combo.currentTextChanged.connect(self._apply_driver)
+        self._sdk_root_edit = QLineEdit()
+        self._sdk_root_edit.editingFinished.connect(self._apply_sdk_root)
+        self._application_edit = QLineEdit()
+        self._application_edit.editingFinished.connect(self._apply_application)
+        self._device_type_edit = QLineEdit()
+        self._device_type_edit.editingFinished.connect(self._apply_device_type)
+        self._device_index_spin = QSpinBox()
+        self._device_index_spin.setRange(0, 255)
+        self._device_index_spin.editingFinished.connect(self._apply_device_index)
+        form.addRow("Driver", self._driver_combo)
+        form.addRow("SDK root", self._sdk_root_edit)
+        form.addRow("Application", self._application_edit)
+        form.addRow("Device type", self._device_type_edit)
+        form.addRow("Device index", self._device_index_spin)
         layout.addWidget(form_frame)
 
-        button = QPushButton("Enumerate")
-        button.setEnabled(False)
-        button.setToolTip("后续接入；真机需 Windows + TSMaster + 实际设备")
-        layout.addWidget(button)
-        layout.addWidget(
-            EmptyState(
-                "设备枚举未接入",
-                "当前页面只保留配置入口，不把硬件能力展示成已完成状态。",
-            ),
-            1,
+        warning = QLabel("Tongxing 真机枚举需要 Windows + TSMaster + 实际设备；mock 可用于自动化验证。")
+        warning.setStyleSheet("color: #667085;")
+        layout.addWidget(warning)
+
+        self._summary_text = QTextEdit()
+        self._summary_text.setReadOnly(True)
+        self._summary_text.setPlainText("尚未枚举设备。")
+        layout.addWidget(self._summary_text)
+
+        tables = QHBoxLayout()
+        self._capabilities_table = QTableView()
+        self._capabilities_table.setModel(self._capability_model)
+        self._capabilities_table.verticalHeader().setVisible(False)
+        self._capabilities_table.setColumnWidth(0, 160)
+        self._capabilities_table.setColumnWidth(1, 100)
+        tables.addWidget(self._capabilities_table)
+
+        self._channels_table = QTableView()
+        self._channels_table.setModel(self._channel_model)
+        self._channels_table.verticalHeader().setVisible(False)
+        self._channels_table.setColumnWidth(0, 150)
+        self._channels_table.setColumnWidth(1, 160)
+        tables.addWidget(self._channels_table)
+        layout.addLayout(tables, 1)
+
+        self._empty = EmptyState(
+            "设备结果为空",
+            "点击 Enumerate 后显示 device info、capabilities、health 和 channel 列表。",
         )
+        layout.addWidget(self._empty)
+
+    def _sync_config(self) -> None:
+        draft = self._view_model.draft
+        self._driver_combo.blockSignals(True)
+        index = self._combo_index_for_text(self._driver_combo, draft.driver)
+        if index < 0:
+            self._driver_combo.addItem(draft.driver)
+            index = self._combo_index_for_text(self._driver_combo, draft.driver)
+        self._driver_combo.setCurrentIndex(index)
+        self._driver_combo.blockSignals(False)
+
+        self._sdk_root_edit.blockSignals(True)
+        self._sdk_root_edit.setText(draft.sdk_root)
+        self._sdk_root_edit.blockSignals(False)
+        self._application_edit.blockSignals(True)
+        self._application_edit.setText(draft.application)
+        self._application_edit.blockSignals(False)
+        self._device_type_edit.blockSignals(True)
+        self._device_type_edit.setText(draft.device_type)
+        self._device_type_edit.blockSignals(False)
+        self._device_index_spin.blockSignals(True)
+        self._device_index_spin.setValue(draft.device_index)
+        self._device_index_spin.blockSignals(False)
+
+    def _sync_result(self) -> None:
+        summary = self._view_model.summary
+        if summary is None:
+            self._summary_text.setPlainText("尚未枚举设备。")
+        else:
+            self._summary_text.setPlainText(
+                "\n".join(
+                    (
+                        f"Device ID: {summary.device_id}",
+                        f"Driver: {summary.driver}",
+                        f"Name: {summary.name}",
+                        f"Serial: {summary.serial_number}",
+                        f"Channels: {summary.channel_count}",
+                        f"Health: {summary.health}",
+                        f"Detail: {summary.health_detail}",
+                    )
+                )
+            )
+        self._capability_model.set_rows(self._view_model.capabilities)
+        self._channel_model.set_rows(self._view_model.channels)
+        self._sync_status_badge()
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _sync_busy(self, busy: bool) -> None:
+        idle = not bool(busy)
+        self._enumerate_button.setEnabled(idle)
+        self._driver_combo.setEnabled(idle)
+        self._sdk_root_edit.setEnabled(idle)
+        self._application_edit.setEnabled(idle)
+        self._device_type_edit.setEnabled(idle)
+        self._device_index_spin.setEnabled(idle)
+        self._sync_status_badge()
+
+    def _sync_error(self, message: str) -> None:
+        self._error_button.setEnabled(bool(message))
+        self._sync_status_badge()
+        if message:
+            self.inspectorChanged.emit("Devices 错误", message)
+
+    def _sync_status_badge(self) -> None:
+        if self._view_model.error:
+            self._status_badge.set_status("Failed", "failed")
+        elif self._view_model.busy:
+            self._status_badge.set_status("Enumerating", "running")
+        elif self._view_model.summary is not None:
+            self._status_badge.set_status("Ready", "ready")
+        else:
+            self._status_badge.set_status("Idle", "default")
+
+    def _apply_driver(self, driver: str) -> None:
+        self._view_model.set_driver(driver)
+
+    def _apply_sdk_root(self) -> None:
+        self._view_model.set_sdk_root(self._sdk_root_edit.text())
+
+    def _apply_application(self) -> None:
+        self._view_model.set_application(self._application_edit.text())
+
+    def _apply_device_type(self) -> None:
+        self._view_model.set_device_type(self._device_type_edit.text())
+
+    def _apply_device_index(self) -> None:
+        self._view_model.set_device_index(self._device_index_spin.value())
+
+    def _show_error_details(self) -> None:
+        if not self._view_model.error:
+            return
+        self.create_error_dialog().exec()
+
+    def _combo_index_for_text(self, combo: QComboBox, value: str) -> int:
+        for index in range(combo.count()):
+            if combo.itemText(index) == str(value):
+                return index
+        return -1
 
 
 class SettingsView(QWidget):

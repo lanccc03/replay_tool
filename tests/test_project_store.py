@@ -9,7 +9,7 @@ import unittest
 import tests.bootstrap  # noqa: F401
 
 from replay_tool.app import ReplayApplication
-from replay_tool.domain import ReplayScenario, ReplayState
+from replay_tool.domain import DeviceConfig, ReplayScenario, ReplayState
 from replay_tool.storage import SqliteProjectStore
 
 
@@ -181,6 +181,34 @@ class ProjectStoreApplicationTests(unittest.TestCase):
         self.assertEqual(ReplayState.STOPPED, snapshot.state)
         self.assertGreater(snapshot.sent_frames, 0)
         self.assertEqual((), snapshot.errors)
+
+    def test_application_enumerates_mock_device(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+            config = DeviceConfig(
+                id="mock0",
+                driver="mock",
+                metadata={"channel_count": 4, "name": "MockBench"},
+            )
+
+            result = app.enumerate_device(config)
+
+        self.assertEqual("mock0", result.info.id)
+        self.assertEqual("mock", result.info.driver)
+        self.assertEqual("MockBench", result.info.name)
+        self.assertEqual((0, 1, 2, 3), result.channels)
+        self.assertTrue(result.capabilities.can)
+        self.assertTrue(result.capabilities.canfd)
+        self.assertTrue(result.capabilities.async_send)
+        self.assertTrue(result.capabilities.fifo_read)
+        self.assertTrue(result.health.online)
+
+    def test_application_enumerate_device_rejects_unknown_driver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = ReplayApplication(workspace=Path(tmp) / "library")
+
+            with self.assertRaisesRegex(ValueError, "Unsupported device driver"):
+                app.enumerate_device(DeviceConfig(id="missing0", driver="missing"))
 
 
 if __name__ == "__main__":

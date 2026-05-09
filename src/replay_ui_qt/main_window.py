@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from replay_ui_qt.app_context import AppContext
+from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
@@ -106,7 +107,9 @@ class MainWindow(QMainWindow):
             lambda body, base_dir: self._start_replay_from_scenario(replay_view_model, body, base_dir)
         )
         replay_view_model.activeChanged.connect(scenario_view.set_replay_active)
-        devices_view = DevicesView()
+        devices_view_model = DevicesViewModel(self._context.application, self._context.task_runner)
+        devices_view_model.statusMessageChanged.connect(self._context.set_status_message)
+        devices_view = DevicesView(devices_view_model)
         settings_view = SettingsView(self._context)
 
         for label, page in (

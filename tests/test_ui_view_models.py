@@ -14,8 +14,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from replay_tool.app import ReplayApplication, ReplaySessionSummary
-from replay_tool.domain import BusType, ChannelConfig, DeviceConfig, ReplaySnapshot, ReplayState
+from replay_tool.app import DeviceEnumerationResult, ReplayApplication, ReplaySessionSummary
+from replay_tool.domain import (
+    BusType,
+    ChannelConfig,
+    DeviceCapabilities,
+    DeviceConfig,
+    DeviceHealth,
+    DeviceInfo,
+    ReplaySnapshot,
+    ReplayState,
+)
 from replay_tool.planning import PlannedChannel, ReplayPlan
 from replay_tool.ports.project_store import ScenarioRecord
 from replay_tool.ports.trace_store import (
@@ -27,6 +36,7 @@ from replay_tool.ports.trace_store import (
 )
 from replay_ui_qt.tasks import TaskRunner
 from replay_ui_qt.view_models.base import BaseViewModel
+from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioTraceChoice, ScenariosViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
@@ -341,6 +351,29 @@ class _ReplayApp:
         return self.session
 
 
+class _DevicesApp:
+    def __init__(
+        self,
+        *,
+        drivers: tuple[str, ...] = ("mock", "tongxing"),
+        result: DeviceEnumerationResult | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.drivers = drivers
+        self.result = result or _device_result()
+        self.error = error
+        self.configs: list[DeviceConfig] = []
+
+    def list_device_drivers(self) -> tuple[str, ...]:
+        return self.drivers
+
+    def enumerate_device(self, config: DeviceConfig) -> DeviceEnumerationResult:
+        self.configs.append(config)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
 def _scenario_body() -> dict[str, object]:
     return {
         "schema_version": 2,
@@ -388,6 +421,25 @@ def _trace_inspection(
         record=trace,
         sources=sources or (TraceSourceSummary(source_channel=0, bus=BusType.CANFD, frame_count=7),),
         messages=(),
+    )
+
+
+def _device_result(*, channel_count: int = 4) -> DeviceEnumerationResult:
+    return DeviceEnumerationResult(
+        info=DeviceInfo(
+            id="mock0",
+            driver="mock",
+            name="MockBench",
+            serial_number="MOCK-001",
+            channel_count=channel_count,
+        ),
+        channels=tuple(range(channel_count)),
+        capabilities=DeviceCapabilities(can=True, canfd=True, async_send=True, fifo_read=True),
+        health=DeviceHealth(
+            online=True,
+            detail="Mock online.",
+            per_channel={index: True for index in range(channel_count)},
+        ),
     )
 
 
@@ -453,6 +505,62 @@ class BaseViewModelTests(unittest.TestCase):
         self.assertFalse(view_model.busy)
         self.assertEqual("boom", view_model.error)
         self.assertEqual("执行失败", view_model.status_message)
+
+
+class DevicesViewModelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication(["test-ui-devices-view-models"])
+
+    def test_default_config_and_editing_map_to_device_config(self) -> None:
+        view_model = DevicesViewModel(_DevicesApp(), _runner())
+
+        self.assertIn("mock", view_model.drivers)
+        self.assertEqual("tongxing", view_model.draft.driver)
+        self.assertEqual("TSMaster/Windows", view_model.draft.sdk_root)
+
+        view_model.set_driver("mock")
+        view_model.set_sdk_root("C:/sdk")
+        view_model.set_application("BenchApp")
+        view_model.set_device_type("MOCK")
+        view_model.set_device_index(3)
+        config = view_model.current_config()
+
+        self.assertEqual("device0", config.id)
+        self.assertEqual("mock", config.driver)
+        self.assertEqual("C:/sdk", config.sdk_root)
+        self.assertEqual("BenchApp", config.application)
+        self.assertEqual("MOCK", config.device_type)
+        self.assertEqual(3, config.device_index)
+
+    def test_enumerate_success_maps_summary_capabilities_and_channels(self) -> None:
+        devices_app = _DevicesApp(result=_device_result(channel_count=4))
+        view_model = DevicesViewModel(devices_app, _runner())
+
+        view_model.set_driver("mock")
+        view_model.enumerate_current_device()
+        _wait_for(lambda: not view_model.busy and view_model.summary is not None, self._app)
+
+        self.assertEqual("mock", devices_app.configs[0].driver)
+        assert view_model.summary is not None
+        self.assertEqual("MockBench", view_model.summary.name)
+        self.assertEqual("Online", view_model.summary.health)
+        self.assertEqual(4, len(view_model.channels))
+        self.assertEqual("Channel Ready", view_model.channels[0].status)
+        self.assertEqual(4, len(view_model.capabilities))
+        self.assertTrue(view_model.capabilities[1].supported)
+
+    def test_enumerate_failure_reports_error_and_releases_busy(self) -> None:
+        view_model = DevicesViewModel(
+            _DevicesApp(error=RuntimeError("hardware missing")),
+            _runner(),
+        )
+
+        view_model.enumerate_current_device()
+        _wait_for(lambda: not view_model.busy and bool(view_model.error), self._app)
+
+        self.assertEqual("hardware missing", view_model.error)
+        self.assertIsNone(view_model.summary)
 
 
 class ReplaySessionViewModelTests(unittest.TestCase):
