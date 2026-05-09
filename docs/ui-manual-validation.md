@@ -25,7 +25,7 @@
 期望：
 
 - 主窗口可见，标题为 `next_replay Workbench`。
-- 左侧导航包含 Trace Library、Scenarios、Replay Monitor、Devices、Settings。
+- 左侧导航包含 Trace Library、Scenarios、Replay Monitor、Devices。
 - 顶部状态条显示当前 workspace。
 - 右侧 Inspector 随页面和选中对象更新。
 
@@ -45,7 +45,6 @@
 | Scenarios | Overview、Traces & Devices、Routes、JSON tab 可切换，运行中关键编辑入口会锁定 | 通过 / 未通过 / 未验证 | |
 | Replay Monitor | 未运行时显示 Stopped；运行后显示 progress、counters、Pause / Resume / Stop | 通过 / 未通过 / 未验证 | |
 | Devices | driver、SDK root、application、device type、device index 可编辑；同星真机边界可见 | 通过 / 未通过 / 未验证 | |
-| Settings | workspace、theme、drivers、验证边界和未实现能力提示可见 | 通过 / 未通过 / 未验证 | |
 
 ## 高 DPI 与可读性
 

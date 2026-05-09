@@ -117,3 +117,5 @@ Manual acceptance:
 ## Idempotence and Recovery
 
 The implementation is additive and read-only for Settings behavior. Re-running tests or opening Settings must not modify scenario records, trace records, hardware state, or configuration files. If a test fails because a local workspace already contains data, rerun tests in their temporary-directory setup; do not delete user workspaces. If manual validation is incomplete, record the missing items explicitly rather than editing code to imply success.
+
+Note: On 2026-05-09, the Settings UI created by this historical plan was removed by product decision. Current UI status is documented in `docs/ui-implementation-roadmap.md`.

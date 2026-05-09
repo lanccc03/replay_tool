@@ -11,7 +11,7 @@
 - Scenarios 页面已能列出当前 workspace 中的真实记录，并将 saved schema v2 scenario 加载为可编辑 draft，支持新建最小 draft、多 route 编辑、保存、校验和删除。
 - Replay Monitor 已完成 mock / app 层自动化收口：可从 Scenarios Run 当前 draft，显示 snapshot / progress / counters / errors，并支持 Pause / Resume / Stop。
 - Devices 已完成 mock / app 层自动化收口：可编辑 driver / SDK root / application / device type / device index，并展示 device info / capabilities / health / channels。
-- Settings 已完成 M8.1 只读产品化基线，可展示 workspace、registered drivers、默认主题、验证边界和未实现能力提示。
+- M8 仍处于 `In Progress`：手工验证文档已建立，但当前没有 Settings UI surface；验证边界保留在文档中。
 - Scenario Editor 已接入多 device / target 参数编辑和现有 target 路由选择；DBC / Signal Override、Diagnostics、DoIP、ZLG、BLF、真实窗口点击、高 DPI、深色主题、打包和 Windows 硬件 UI 验证尚未完成。
 
 ## 1. 实现原则
@@ -48,7 +48,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 | M5 Devices 设备枚举与配置闭环 | `Done` | UI 枚举设备、展示通道和配置参数 | M1、app 层设备枚举 API | Mock / app 层自动化闭环已完成；同星 UI 真机枚举仍按手工验证记录 |
 | M6 Signal Override UI | `Blocked` | DBC 绑定和 signal override 操作界面 | DBC、SignalDatabase port、override plan | core 能力落地后才启用 |
 | M7 Diagnostics UI | `Blocked` | CAN ISO-TP / UDS / DoIP 诊断动作界面 | DiagnosticClient port、diagnostic timeline item | 诊断动作进入 ReplayPlan 并由 runtime 分发 |
-| M8 产品化收尾 | `In Progress` | 高 DPI、可访问性、深色主题、打包与手工验证 | M2-M5 至少形成工作流闭环 | M8.1 已启动 Settings 产品化和手工验证记录；高 DPI / 真机 UI / 深色主题 / 打包仍未完成 |
+| M8 产品化收尾 | `In Progress` | 高 DPI、可访问性、深色主题、打包与手工验证 | M2-M5 至少形成工作流闭环 | 手工验证文档已建立；无 Settings UI surface；高 DPI / 真机 UI / 深色主题 / 打包仍未完成 |
 
 ## 3. Milestones
 
@@ -64,7 +64,7 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 - 左侧导航、顶部状态条、主工作区、右侧 Inspector。
 - Trace Library 只读列表，调用 `ReplayApplication.list_traces()`。
 - Scenarios 只读列表，调用 `ReplayApplication.list_scenarios()`。
-- Replay Monitor、Devices、Settings 占位页。
+- Replay Monitor、Devices 占位页。
 
 验收证据：
 
@@ -406,11 +406,11 @@ UI 草稿状态和运行模型必须分开。Scenario 编辑草稿可以留在 `
 
 - 完成 UI 作为日常工程工具所需的可靠性、可读性和交付检查。
 
-M8.1 产品化验证基线已交付：
+M8 产品化验证基线仍在推进：
 
-- 新增 `.agents/ui-m8-productization.md` ExecPlan，用于记录 M8.1 的设计、进度、验证证据和未验证项。
+- `.agents/ui-m8-productization.md` 保留为历史 ExecPlan，用于记录此前 M8.1 的设计、进度、验证证据和未验证项。
 - 新增 `docs/ui-manual-validation.md`，用于记录真实窗口点击、高 DPI 100% / 125% / 150%、文本重叠 / 截断和关键页面手工结论。
-- Settings 页面已从占位升级为只读产品化状态页，通过 UI-only ViewModel 展示 workspace、registered drivers、默认浅色主题、自动化验证命令、手工验证要求和未实现能力边界。
+- 先前 Settings 状态页已按产品决策移除；当前没有 Settings UI surface，验证边界和未实现能力说明保留在本文档、`docs/testing.md` 和 `docs/ui-manual-validation.md` 中。
 - M6 Signal Override 和 M7 Diagnostics 继续保持 `Blocked`；未实现 core 前，DBC / Signal Override、Diagnostics、DoIP、ZLG 和 BLF 不显示为可用能力。
 - 自动化验收已通过：`uv run ruff check src tests`、`uv run python -m compileall src tests`、`uv run python -m unittest discover -s tests -v`（137 tests OK）和 `uv run replay-ui --help`。
 - 本批未执行真实窗口点击、高 DPI 或 Windows 同星真机 UI 验证；这些项目仍必须按 `docs/ui-manual-validation.md` 和 `docs/tongxing-hardware-validation.md` 手工记录。

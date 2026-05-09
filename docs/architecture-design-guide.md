@@ -534,7 +534,7 @@ domain/diagnostics.py
 
 ## 9. UI 设计原则
 
-UI 已具备 PySide6 工程工作台基线。当前工作台提供导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流、Scenario Store 可视化 draft 编辑 / 保存 / 校验 / 运行、Replay Monitor 非阻塞 Mock session 控制、Devices mock / app 层枚举工作流，以及 Settings 产品化状态页。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
+UI 已具备 PySide6 工程工作台基线。当前工作台提供 Trace Library、Scenarios、Replay Monitor 和 Devices 四个页面，以及导航、顶部状态条、Inspector、默认浅色主题、异步 busy / error 反馈、Trace Library 完整工作流、Scenario Store 可视化 draft 编辑 / 保存 / 校验 / 运行、Replay Monitor 非阻塞 Mock session 控制和 Devices mock / app 层枚举工作流。后续完整 PySide6 UI 应继续作为工程工作台，不是业务中心。
 
 当前 / 建议结构：
 
@@ -730,7 +730,7 @@ replay-tool delete-scenario <scenario-id>
 已经具备：
 
 - headless CLI。
-- PySide6 工程工作台：`replay-ui` 入口、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表、schema v2 draft 可视化编辑 / 保存 / Validate / Run、Replay Monitor 非阻塞 Mock session 控制、Devices mock / app 层枚举页面，以及 Settings 产品化状态页。
+- PySide6 工程工作台：`replay-ui` 入口、Trace Library、Scenarios、Replay Monitor 和 Devices 四个页面、默认浅色主题、导航、顶部状态条、Inspector、异步 busy / error 反馈、Trace Library Import / Inspect / Rebuild / Delete 工作流、Scenario Store 列表、schema v2 draft 可视化编辑 / 保存 / Validate / Run、Replay Monitor 非阻塞 Mock session 控制，以及 Devices mock / app 层枚举页面。
 - domain / planning / runtime / ports / adapters / storage / app 分层。
 - Mock 回放。
 - 同星 adapter。
