@@ -11,6 +11,7 @@ env/
 
 # Project runtime workspace
 .replay_tool/
+.worktrees/
 
 # Test, coverage, and build outputs
 .pytest_cache/
@@ -26,4 +27,3 @@ dist/
 # Local environment files
 .env
 .env.*
-
