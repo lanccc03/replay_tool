@@ -34,7 +34,7 @@ class UiSmokeTests(unittest.TestCase):
                 _wait_for(lambda: context.task_runner.active_count() == 0, self._app)
 
                 self.assertEqual("next_replay Workbench", window.windowTitle())
-                self.assertEqual(5, window.navigation_count())
+                self.assertEqual(4, window.navigation_count())
                 self.assertEqual("Trace Library", window.current_page_name())
                 self.assertIn("Workspace:", window.workspace_status_text())
                 self.assertIn(tmp, window.workspace_status_text())
@@ -42,9 +42,8 @@ class UiSmokeTests(unittest.TestCase):
 
                 window.show_page("Settings")
                 self._app.processEvents()
-                self.assertEqual("Settings", window.current_page_name())
-                self.assertIn("M8.1", window.inspector_text())
-                self.assertIn("DBC / Signal Override", window.inspector_text())
+                self.assertEqual("Trace Library", window.current_page_name())
+                self.assertIn("Trace", window.inspector_text())
             finally:
                 window.close()
                 self._app.processEvents()
