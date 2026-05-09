@@ -1,5 +1,11 @@
 # UI M8.1 Productization Baseline
 
+Historical note: this plan records a completed M8.1 implementation that added
+a Settings status page. On 2026-05-09, that Settings UI was removed by product
+decision. Use `docs/ui-implementation-roadmap.md` for current UI status; the
+Settings-specific statements below describe historical work, not the current
+workbench.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 This plan follows `.agents/PLANS.md` from the repository root. Any agent continuing this work must keep this document self-contained and update it after every meaningful stopping point.
