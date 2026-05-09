@@ -37,8 +37,9 @@ from replay_ui_qt.tasks import TaskRunner
 from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioSourceChoice, ScenarioTraceChoice, ScenariosViewModel
+from replay_ui_qt.view_models.settings import SettingsViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
-from replay_ui_qt.views.placeholders import DevicesView, ReplayMonitorView
+from replay_ui_qt.views.placeholders import DevicesView, ReplayMonitorView, SettingsView
 from replay_ui_qt.views.scenarios_view import ScenariosView
 from replay_ui_qt.views.trace_library_view import TraceLibraryView
 
@@ -470,6 +471,35 @@ class DevicesViewTests(unittest.TestCase):
                 self.assertIn("hardware missing", dialog.detail_text())
             finally:
                 dialog.close()
+        finally:
+            view.close()
+            self._app.processEvents()
+
+
+class SettingsViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication(["test-ui-settings-view"])
+
+    def test_settings_view_renders_productization_and_validation_boundaries(self) -> None:
+        view_model = SettingsViewModel(
+            _DevicesApp(drivers=("mock", "tongxing")),
+            workspace="C:/code/next_replay/.replay_tool",
+        )
+        view = SettingsView(view_model)
+        try:
+            self.assertEqual(("M8.1 In Progress", "running"), view.status_badge_state())
+            self.assertIn("Workspace: C:\\code\\next_replay\\.replay_tool", view.summary_text())
+            self.assertIn("Drivers: mock, tongxing", view.summary_text())
+            self.assertIn("offscreen 自动化不能替代", view.summary_text())
+            self.assertEqual(4, view.unsupported_row_count())
+            self.assertEqual(4, view.validation_row_count())
+            self.assertEqual(3, view.manual_row_count())
+
+            title, body = view.inspector_snapshot()
+            self.assertEqual("Settings", title)
+            self.assertIn("DBC / Signal Override", body)
+            self.assertIn("真实窗口", body)
         finally:
             view.close()
             self._app.processEvents()

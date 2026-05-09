@@ -39,6 +39,12 @@ class UiSmokeTests(unittest.TestCase):
                 self.assertIn("Workspace:", window.workspace_status_text())
                 self.assertIn(tmp, window.workspace_status_text())
                 self.assertIn("Trace", window.inspector_text())
+
+                window.show_page("Settings")
+                self._app.processEvents()
+                self.assertEqual("Settings", window.current_page_name())
+                self.assertIn("M8.1", window.inspector_text())
+                self.assertIn("DBC / Signal Override", window.inspector_text())
             finally:
                 window.close()
                 self._app.processEvents()

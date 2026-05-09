@@ -19,9 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from replay_ui_qt.app_context import AppContext
 from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
+from replay_ui_qt.view_models.settings import SettingsViewModel
 from replay_ui_qt.widgets.dialogs import create_danger_confirmation, create_error_details_dialog
 from replay_ui_qt.widgets.empty_state import EmptyState
 from replay_ui_qt.widgets.status_badge import StatusBadge
@@ -676,19 +676,41 @@ class DevicesView(QWidget):
 
 
 class SettingsView(QWidget):
-    """First-stage settings page showing workspace and theme facts."""
+    """Read-only productization and validation status page."""
 
     inspectorChanged = Signal(str, str)
 
-    def __init__(self, context: AppContext) -> None:
-        """Create the settings placeholder view.
+    def __init__(self, view_model: SettingsViewModel) -> None:
+        """Create the settings view.
 
         Args:
-            context: Shared application context with workspace information.
+            view_model: ViewModel that exposes read-only Settings facts.
         """
         super().__init__()
-        self._context = context
+        self._view_model = view_model
+        self._unsupported_model = ObjectTableModel(
+            (
+                TableColumn("Feature", lambda row: row.feature),
+                TableColumn("State", lambda row: row.state, status=True),
+                TableColumn("Detail", lambda row: row.detail),
+            )
+        )
+        self._validation_model = ObjectTableModel(
+            (
+                TableColumn("Item", lambda row: row.item),
+                TableColumn("State", lambda row: row.state, status=True),
+                TableColumn("Detail", lambda row: row.detail, monospace=True),
+            )
+        )
+        self._manual_model = ObjectTableModel(
+            (
+                TableColumn("Item", lambda row: row.item),
+                TableColumn("State", lambda row: row.state, status=True),
+                TableColumn("Detail", lambda row: row.detail),
+            )
+        )
         self._build_ui()
+        self._sync_rows()
 
     def inspector_snapshot(self) -> tuple[str, str]:
         """Return the current inspector content for this page.
@@ -698,16 +720,132 @@ class SettingsView(QWidget):
         """
         return (
             "Settings",
-            f"Workspace: {self._context.workspace}\nTheme: 默认浅色工程主题\n深色主题后续接入。",
+            "\n".join(
+                (
+                    self._view_model.summary_text(),
+                    "",
+                    "未实现能力必须保持禁用或未接入：",
+                    ", ".join(row.feature for row in self._view_model.unsupported_features),
+                )
+            ),
         )
+
+    def summary_text(self) -> str:
+        """Return the visible Settings summary text.
+
+        Returns:
+            Plain text shown in the summary panel.
+        """
+        return self._summary_text.toPlainText()
+
+    def unsupported_row_count(self) -> int:
+        """Return unsupported feature row count.
+
+        Returns:
+            Number of unsupported feature rows.
+        """
+        return self._unsupported_model.rowCount()
+
+    def validation_row_count(self) -> int:
+        """Return automated validation row count.
+
+        Returns:
+            Number of automated validation rows.
+        """
+        return self._validation_model.rowCount()
+
+    def manual_row_count(self) -> int:
+        """Return manual validation row count.
+
+        Returns:
+            Number of manual validation rows.
+        """
+        return self._manual_model.rowCount()
+
+    def status_badge_state(self) -> tuple[str, str]:
+        """Return the productization status badge state.
+
+        Returns:
+            Tuple of visible text and semantic state.
+        """
+        return self._status_badge.text(), self._status_badge.semantic
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.addWidget(
-            EmptyState(
-                "Settings",
-                f"当前 workspace: {self._context.workspace}\n主题遵循 docs/ui-style-guide.md。",
-            ),
-            1,
-        )
+        layout.setSpacing(12)
+
+        toolbar = QHBoxLayout()
+        title = QLabel("Settings")
+        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        toolbar.addWidget(title)
+        self._status_badge = StatusBadge("M8.1 In Progress", "running")
+        self._status_badge.setToolTip("M8 产品化收尾已启动；本批只覆盖 Settings 和验证记录基线")
+        toolbar.addWidget(self._status_badge)
+        self._theme_badge = StatusBadge(self._view_model.theme_name, "ready")
+        self._theme_badge.setToolTip("当前启用默认浅色工程主题；深色主题后续 M8 批次处理")
+        toolbar.addWidget(self._theme_badge)
+        toolbar.addStretch(1)
+        layout.addLayout(toolbar)
+
+        self._summary_text = QTextEdit()
+        self._summary_text.setReadOnly(True)
+        self._summary_text.setToolTip("当前 workspace、theme、registered drivers 和验证边界")
+        self._summary_text.setPlainText(self._view_model.summary_text())
+        self._summary_text.setMaximumHeight(140)
+        layout.addWidget(self._summary_text)
+
+        layout.addWidget(self._table_panel("Blocked / Planned Capabilities", self._unsupported_table()))
+        layout.addWidget(self._table_panel("Automated Validation", self._validation_table()))
+        layout.addWidget(self._table_panel("Manual Validation Required", self._manual_table()), 1)
+
+        self.inspectorChanged.emit(*self.inspector_snapshot())
+
+    def _table_panel(self, title: str, table: QTableView) -> QFrame:
+        panel = QFrame()
+        panel.setStyleSheet("background: #FFFFFF; border: 1px solid #D8DEE6; border-radius: 6px;")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(12, 10, 12, 12)
+        label = QLabel(str(title))
+        label.setStyleSheet("font-weight: 700;")
+        panel_layout.addWidget(label)
+        panel_layout.addWidget(table)
+        return panel
+
+    def _unsupported_table(self) -> QTableView:
+        self._unsupported_table_view = QTableView()
+        self._unsupported_table_view.setToolTip("这些能力尚未由 core/app/runtime 支持，不能显示为可用功能")
+        self._unsupported_table_view.setModel(self._unsupported_model)
+        self._unsupported_table_view.verticalHeader().setVisible(False)
+        self._unsupported_table_view.setAlternatingRowColors(True)
+        self._unsupported_table_view.setColumnWidth(0, 180)
+        self._unsupported_table_view.setColumnWidth(1, 90)
+        self._unsupported_table_view.setColumnWidth(2, 520)
+        return self._unsupported_table_view
+
+    def _validation_table(self) -> QTableView:
+        self._validation_table_view = QTableView()
+        self._validation_table_view.setToolTip("本批 Settings / UI 改动交付前必须运行的自动化命令")
+        self._validation_table_view.setModel(self._validation_model)
+        self._validation_table_view.verticalHeader().setVisible(False)
+        self._validation_table_view.setAlternatingRowColors(True)
+        self._validation_table_view.setColumnWidth(0, 140)
+        self._validation_table_view.setColumnWidth(1, 90)
+        self._validation_table_view.setColumnWidth(2, 640)
+        return self._validation_table_view
+
+    def _manual_table(self) -> QTableView:
+        self._manual_table_view = QTableView()
+        self._manual_table_view.setToolTip("offscreen 自动化不能替代的真实窗口、高 DPI 和硬件 UI 验证")
+        self._manual_table_view.setModel(self._manual_model)
+        self._manual_table_view.verticalHeader().setVisible(False)
+        self._manual_table_view.setAlternatingRowColors(True)
+        self._manual_table_view.setColumnWidth(0, 220)
+        self._manual_table_view.setColumnWidth(1, 90)
+        self._manual_table_view.setColumnWidth(2, 520)
+        return self._manual_table_view
+
+    def _sync_rows(self) -> None:
+        self._unsupported_model.set_rows(self._view_model.unsupported_features)
+        self._validation_model.set_rows(self._view_model.validation_items)
+        self._manual_model.set_rows(self._view_model.manual_items)

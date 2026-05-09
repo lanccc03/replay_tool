@@ -6,6 +6,7 @@ from replay_ui_qt.app_context import AppContext
 from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenariosViewModel
+from replay_ui_qt.view_models.settings import SettingsViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 from replay_ui_qt.views.placeholders import DevicesView, ReplayMonitorView, SettingsView
 from replay_ui_qt.views.scenarios_view import ScenariosView
@@ -66,6 +67,14 @@ class MainWindow(QMainWindow):
         """
         return self._inspector.text()
 
+    def show_page(self, label: str) -> None:
+        """Switch the workbench to a page by navigation label.
+
+        Args:
+            label: Human-readable navigation label, such as "Settings".
+        """
+        self._show_page_by_label(label)
+
     def _build_ui(self) -> None:
         self.setWindowTitle("next_replay Workbench")
         root = QWidget()
@@ -110,7 +119,8 @@ class MainWindow(QMainWindow):
         devices_view_model = DevicesViewModel(self._context.application, self._context.task_runner)
         devices_view_model.statusMessageChanged.connect(self._context.set_status_message)
         devices_view = DevicesView(devices_view_model)
-        settings_view = SettingsView(self._context)
+        settings_view_model = SettingsViewModel(self._context.application, workspace=self._context.workspace)
+        settings_view = SettingsView(settings_view_model)
 
         for label, page in (
             ("Trace Library", trace_view),

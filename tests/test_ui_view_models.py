@@ -39,6 +39,7 @@ from replay_ui_qt.view_models.base import BaseViewModel
 from replay_ui_qt.view_models.devices import DevicesViewModel
 from replay_ui_qt.view_models.replay_session import ReplaySessionViewModel
 from replay_ui_qt.view_models.scenarios import ScenarioTraceChoice, ScenariosViewModel
+from replay_ui_qt.view_models.settings import SettingsViewModel
 from replay_ui_qt.view_models.trace_library import TraceLibraryViewModel
 
 
@@ -607,6 +608,29 @@ class DevicesViewModelTests(unittest.TestCase):
             self.assertEqual("Unknown", view_model.channels[0].status)
             self.assertEqual(("CAN", "CANFD", "Async Send", "FIFO Read"), tuple(row.name for row in view_model.capabilities))
             self.assertTrue(all(row.supported for row in view_model.capabilities))
+
+
+class SettingsViewModelTests(unittest.TestCase):
+    def test_settings_summary_reports_workspace_drivers_and_boundaries(self) -> None:
+        view_model = SettingsViewModel(
+            _DevicesApp(drivers=("mock", "tongxing")),
+            workspace="C:/code/next_replay/.replay_tool",
+        )
+
+        self.assertEqual("C:\\code\\next_replay\\.replay_tool", view_model.workspace)
+        self.assertEqual("默认浅色工程主题", view_model.theme_name)
+        self.assertEqual(("mock", "tongxing"), view_model.driver_names)
+        self.assertIn("Drivers: mock, tongxing", view_model.summary_text())
+        self.assertIn("offscreen 自动化不能替代", view_model.summary_text())
+        self.assertTrue(any(row.feature == "DBC / Signal Override" for row in view_model.unsupported_features))
+        self.assertTrue(any(row.item == "ruff" for row in view_model.validation_items))
+        self.assertTrue(all(row.state == "未验证" for row in view_model.manual_items))
+
+    def test_settings_uses_placeholder_driver_when_registry_is_empty(self) -> None:
+        view_model = SettingsViewModel(_DevicesApp(drivers=()), workspace=".replay_tool")
+
+        self.assertEqual(("未注册",), view_model.driver_names)
+        self.assertIn("Drivers: 未注册", view_model.summary_text())
 
 
 class ReplaySessionViewModelTests(unittest.TestCase):

@@ -66,9 +66,11 @@ Replay Monitor supports the first non-blocking session workflow with snapshot
 polling, progress, counters, errors, Pause, Resume, and Stop. Devices supports
 the first app-layer enumeration workflow for editable driver / SDK / hardware
 parameters and displays device info, capabilities, health, and channels.
-Settings is still a structured placeholder. DBC / Signal Override, diagnostics,
-DoIP, ZLG, BLF, high DPI checks, real window click checks, and Windows hardware
-UI validation are not implemented or not verified yet. See
+Settings shows the workspace, registered drivers, active light theme,
+validation commands, manual verification boundaries, and unsupported feature
+status. DBC / Signal Override, diagnostics, DoIP, ZLG, BLF, high DPI checks,
+real window click checks, dark theme, packaging, and Windows hardware UI
+validation are not implemented or not verified yet. See
 [`docs/ui-implementation-roadmap.md`](docs/ui-implementation-roadmap.md) for the
 current UI milestone status.
 
