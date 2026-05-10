@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QMainWindow,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from replay_ui_qt.app_context import AppContext
 from replay_ui_qt.view_models.devices import DevicesViewModel
@@ -94,6 +103,13 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.addWidget(self._stack)
         self._inspector = InspectorPanel()
+
+        for panel in (self._navigation, self._content_panel, self._inspector):
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(12)
+            shadow.setOffset(0, 1)
+            shadow.setColor(QColor(0, 0, 0, 30))
+            panel.setGraphicsEffect(shadow)
 
         body.addWidget(self._navigation)
         body.addWidget(self._content_panel, 1)
