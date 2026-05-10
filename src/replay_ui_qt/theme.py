@@ -59,6 +59,15 @@ QFrame#TopStatusBar, QFrame#InspectorPanel, QFrame#NavigationPanel {
     background: #FFFFFF;
     border: 1px solid #D8DEE6;
 }
+QFrame#ContentPanel {
+    background: #FFFFFF;
+    border: 1px solid #D8DEE6;
+}
+QFrame#ToolbarHeader {
+    background: #EEF2F5;
+    border: none;
+    border-bottom: 1px solid #D8DEE6;
+}
 QLabel#StatusPill {
     background: #DDF4F2;
     border: 1px solid #087F8C;
