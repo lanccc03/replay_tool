@@ -602,7 +602,7 @@ class TraceLibraryViewTests(unittest.TestCase):
                 _wait_for(lambda: view.refresh_enabled(), self._app)
                 from PySide6.QtWidgets import QFrame
                 header = view.findChild(QFrame, "ToolbarHeader")
-                self.assertIsNotNone(header, "ToolbarHeader QFrame should wrap toolbar")
+                self.assertIsNone(header, "Toolbar should be bare QHBoxLayout, not wrapped in ToolbarHeader QFrame")
             finally:
                 view.close()
                 self._app.processEvents()
@@ -1093,7 +1093,7 @@ class ScenariosViewTests(unittest.TestCase):
             from PySide6.QtWidgets import QFrame
 
             header = view.findChild(QFrame, "ToolbarHeader")
-            self.assertIsNotNone(header, "ToolbarHeader QFrame should wrap list toolbar")
+            self.assertIsNone(header, "Toolbar should be bare QHBoxLayout, not wrapped in ToolbarHeader QFrame")
         finally:
             view.close()
             self._app.processEvents()

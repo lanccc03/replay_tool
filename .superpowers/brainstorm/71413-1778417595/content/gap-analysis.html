@@ -1,0 +1,92 @@
+<h2>UI Gap Analysis: What's Done vs. What's Missing</h2>
+<p class="subtitle">The recent UI cohesion work unified the shell and two views — but two views and several details remain untreated</p>
+
+<div class="section">
+  <h3>Completed (last 5 commits)</h3>
+
+<div class="cards">
+  <div class="card" style="border-left: 4px solid #178C55;">
+    <div class="card-body">
+      <h3>Shell: ContentPanel container</h3>
+      <p>NavigationPanel, ContentPanel, InspectorPanel now form three equal white surface cards with border-radius and subtle shadow.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #178C55;">
+    <div class="card-body">
+      <h3>ToolbarHeader frame</h3>
+      <p>TraceLibraryView + ScenariosView toolbars now sit inside a surface_muted header with bottom border.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #178C55;">
+    <div class="card-body">
+      <h3>Editor section labels</h3>
+      <p>Unified to font-weight: 600, color: #667085 across Overview, Traces &amp; Devices, Routes.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="section">
+  <h3>Not Yet Treated</h3>
+
+<div class="cards">
+  <div class="card" style="border-left: 4px solid #B7791F;">
+    <div class="card-body">
+      <h3>ReplayMonitorView toolbar</h3>
+      <p>Still uses <code>layout.addLayout(toolbar)</code> directly — no ToolbarHeader wrapper. The Pause/Resume/Stop buttons float on the page background.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #B7791F;">
+    <div class="card-body">
+      <h3>DevicesView toolbar</h3>
+      <p>Same issue — toolbar has no ToolbarHeader. The Enumerate button row has no visual anchoring.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #B7791F;">
+    <div class="card-body">
+      <h3>Inconsistent surface containers</h3>
+      <p>ReplayMonitorView and DevicesView use standalone <code>QFrame</code> with inline stylesheets for their content sections instead of relying on the theme system.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #D8DEE6;">
+    <div class="card-body">
+      <h3>Navigation polish</h3>
+      <p>Left nav uses QListWidget with basic styling. No section headers, no iconography, no active indicator beyond selection highlight.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #D8DEE6;">
+    <div class="card-body">
+      <h3>Table consistency</h3>
+      <p>Editor sub-tables (Traces, Devices, Targets, Routes) have maxHeight constraints but no alternating row colors — inconsistent with list tables.</p>
+    </div>
+  </div>
+  <div class="card" style="border-left: 4px solid #D8DEE6;">
+    <div class="card-body">
+      <h3>Empty states &amp; spacing</h3>
+      <p>EmptyState widgets are basic QLabel pairs. Metrics cards in ReplayMonitor use inline stylesheets. Overall the spacing language is implicit, not systematic.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="section">
+  <h3>First Question</h3>
+  <p>Before I dive into recommendations, I need to understand what you're seeing. Are you looking at a specific view that bothers you most, or is it a general feeling across the whole app?</p>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="specific" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>One view bothers me most</h3>
+      <p>I'll tell you which page feels the worst and we focus there.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="general" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>General feeling across the app</h3>
+      <p>The whole workbench feels rough around the edges. Let's do a broad polish pass.</p>
+    </div>
+  </div>
+</div>

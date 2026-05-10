@@ -642,12 +642,8 @@ class ScenariosView(QWidget):
         toolbar.addWidget(self._error_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
-        toolbar.setContentsMargins(0, 0, 0, 0)
         toolbar.addStretch(1)
-        toolbar_frame = QFrame()
-        toolbar_frame.setObjectName("ToolbarHeader")
-        toolbar_frame.setLayout(toolbar)
-        layout.addWidget(toolbar_frame)
+        layout.addLayout(toolbar)
 
         self._list_stack = QStackedWidget()
         self._table = QTableView()
@@ -771,11 +767,7 @@ class ScenariosView(QWidget):
         self._editor_run_button.setEnabled(False)
         self._editor_run_button.clicked.connect(self._run_loaded_scenario)
         top_bar.addWidget(self._editor_run_button)
-        top_bar.setContentsMargins(0, 0, 0, 0)
-        editor_toolbar = QFrame()
-        editor_toolbar.setObjectName("ToolbarHeader")
-        editor_toolbar.setLayout(top_bar)
-        layout.addWidget(editor_toolbar)
+        layout.addLayout(top_bar)
 
         # Section 1: Overview
         overview_label = QLabel("Overview")

@@ -58,19 +58,15 @@ QMainWindow {
 QFrame#TopStatusBar, QFrame#InspectorPanel, QFrame#NavigationPanel {
     background: #FFFFFF;
     border: 1px solid #D8DEE6;
-    border-radius: 8px;
 }
 QFrame#ContentPanel {
     background: #FFFFFF;
     border: 1px solid #D8DEE6;
-    border-radius: 8px;
 }
 QFrame#ToolbarHeader {
     background: #EEF2F5;
     border: none;
     border-bottom: 1px solid #D8DEE6;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
 }
 QLabel#StatusPill {
     background: #DDF4F2;

@@ -1,0 +1,72 @@
+<h2>当前 UI 视觉问题诊断</h2>
+<p class="subtitle">对比当前结构和推荐结构，找出 toolbar、table 和其他组件"不像一个整体"的原因</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">当前结构 — 组件独立漂浮</div>
+    <div class="mockup-body" style="padding:12px;background:#F6F7F9;">
+      <!-- TopStatusBar -->
+      <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:#667085;">
+        Workspace: demo | 页面: Trace Library | Runtime: Stopped
+      </div>
+      <div style="display:flex;gap:8px;">
+        <!-- Nav -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:140px;font-size:11px;">
+          <div style="font-weight:700;margin-bottom:6px;">next_replay</div>
+          <div style="background:#DDF4F2;color:#087F8C;border-radius:4px;padding:4px 6px;">Trace Library</div>
+          <div style="padding:4px 6px;color:#667085;">Scenarios</div>
+          <div style="padding:4px 6px;color:#667085;">Replay Monitor</div>
+          <div style="padding:4px 6px;color:#667085;">Devices</div>
+        </div>
+        <!-- Main content area — 没有容器！ -->
+        <div style="flex:1;font-size:11px;color:#667085;">
+          <!-- Toolbar 漂浮在背景上 -->
+          <div style="margin-bottom:8px;">
+            <button class="mock-button" style="font-size:10px;">刷新</button>
+            <button class="mock-button" style="font-size:10px;">Import Trace</button>
+            <button class="mock-button" style="font-size:10px;">Inspect</button>
+            <button class="mock-button" style="font-size:10px;">Rebuild Cache</button>
+            <button class="mock-button" style="font-size:10px;">Delete</button>
+            <span style="background:#DDF4F2;color:#087F8C;border-radius:3px;padding:2px 6px;font-size:10px;margin-left:auto;">Ready</span>
+          </div>
+          <!-- Table 有白色表面和边框 -->
+          <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:4px;min-height:200px;">
+            <div style="display:flex;background:#EEF2F5;padding:4px 6px;font-size:10px;color:#667085;border-bottom:1px solid #D8DEE6;">
+              <span style="width:30%">名称</span>
+              <span style="width:30%">Trace ID</span>
+              <span style="width:15%">Frames</span>
+              <span style="width:25%">Cache</span>
+            </div>
+            <div style="padding:6px 4px;font-size:10px;color:#667085;text-align:center;">表格数据区域</div>
+          </div>
+        </div>
+        <!-- Inspector -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:220px;font-size:11px;">
+          <div style="font-weight:600;margin-bottom:4px;">Inspector</div>
+          <div style="color:#667085;font-size:10px;">选择一条记录查看详情</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">问题标注</div>
+    <div class="mockup-body" style="padding:12px;background:#F6F7F9;font-size:13px;">
+      <div style="background:#FFF;border:1px solid #FECACA;border-left:3px solid #DC2626;border-radius:4px;padding:8px;margin-bottom:10px;">
+        <strong style="color:#DC2626;">问题 1:</strong> 工具栏没有视觉容器 —— 按钮直接漂浮在 #F6F7F9 背景上，与下方的 table 没有视觉关联
+      </div>
+      <div style="background:#FFF;border:1px solid #FECACA;border-left:3px solid #DC2626;border-radius:4px;padding:8px;margin-bottom:10px;">
+        <strong style="color:#DC2626;">问题 2:</strong> 左侧导航和右侧 Inspector 都有白色表面+边框，但中间的主要内容区没有任何容器包裹，像一个"空洞"
+      </div>
+      <div style="background:#FFF;border:1px solid #FECACA;border-left:3px solid #DC2626;border-radius:4px;padding:8px;margin-bottom:10px;">
+        <strong style="color:#DC2626;">问题 3:</strong> toolbar 和 table 之间只有间距，没有视觉连接 —— 它们看起来是两个独立元素，而非一个整体
+      </div>
+      <div style="background:#FFF;border:1px solid #FED7AA;border-left:3px solid #EA580C;border-radius:4px;padding:8px;margin-bottom:10px;">
+        <strong style="color:#EA580C;">问题 4:</strong> StatusBadge 混在 toolbar 最右侧，位置尴尬 —— 它既不是操作按钮，也不是导航元素
+      </div>
+      <div style="background:#FFF;border:1px solid #FED7AA;border-left:3px solid #EA580C;border-radius:4px;padding:8px;">
+        <strong style="color:#EA580C;">问题 5:</strong> Scenario Editor 中用 maxHeight 限制的 table + inline 样式的 section label，缺乏统一的视觉层次
+      </div>
+    </div>
+  </div>
+</div>

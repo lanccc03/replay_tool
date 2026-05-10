@@ -84,7 +84,6 @@ class MainWindow(QMainWindow):
         self._show_page_by_label(label)
 
     def _build_ui(self) -> None:
-        self.setWindowTitle("next_replay Workbench")
         root = QWidget()
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(8, 8, 8, 8)

@@ -1,0 +1,100 @@
+<h2>两种"物理分组"方案</h2>
+<p class="subtitle">都是在 toolbar+table 外围加容器，区别在容器的层级</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">方案 A: Shell 级 — 整个 QStackedWidget 套容器</div>
+    <div class="mockup-body" style="padding:8px;background:#F6F7F9;">
+      <!-- TopStatusBar -->
+      <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:#667085;">TopStatusBar</div>
+      <div style="display:flex;gap:8px;min-height:300px;">
+        <!-- Nav -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:100px;font-size:10px;color:#667085;">Nav</div>
+        <!-- Content surface — 一个大的白色容器包裹整个 workspace -->
+        <div style="flex:1;background:#FFF;border:1px solid #D8DEE6;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;">
+          <!-- Toolbar 用 surface_muted 作为 header -->
+          <div style="background:#EEF2F5;border-bottom:1px solid #D8DEE6;padding:6px 10px;font-size:10px;">
+            <button class="mock-button" style="font-size:9px;">刷新</button>
+            <button class="mock-button" style="font-size:9px;">Import</button>
+            <button class="mock-button" style="font-size:9px;">Inspect</button>
+            <button class="mock-button" style="font-size:9px;">Rebuild</button>
+            <button class="mock-button" style="font-size:9px;">Delete</button>
+            <span style="float:right;background:#DDF4F2;color:#087F8C;border-radius:3px;padding:2px 5px;font-size:9px;">Ready</span>
+          </div>
+          <!-- Table 区域 -->
+          <div style="flex:1;padding:0;">
+            <div style="display:flex;background:#EEF2F5;padding:3px 8px;font-size:9px;color:#667085;border-bottom:1px solid #D8DEE6;">
+              <span style="width:30%">名称</span><span style="width:30%">Trace ID</span><span style="width:15%">Frames</span><span style="width:25%">Cache</span>
+            </div>
+            <div style="padding:20px;font-size:9px;color:#667085;text-align:center;">表格数据区域</div>
+          </div>
+        </div>
+        <!-- Inspector -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:100px;font-size:10px;color:#667085;">Inspector</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">方案 B: View 级 — 每个 View 内部自套容器</div>
+    <div class="mockup-body" style="padding:8px;background:#F6F7F9;">
+      <!-- TopStatusBar -->
+      <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:6px 12px;margin-bottom:8px;font-size:11px;color:#667085;">TopStatusBar</div>
+      <div style="display:flex;gap:8px;min-height:300px;">
+        <!-- Nav -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:100px;font-size:10px;color:#667085;">Nav</div>
+        <!-- 无外层容器 — 每个 View 自己负责 -->
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+          <!-- View 自己的 surface 容器 -->
+          <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="background:#EEF2F5;border-bottom:1px solid #D8DEE6;padding:6px 10px;font-size:10px;">
+              <button class="mock-button" style="font-size:9px;">刷新</button>
+              <button class="mock-button" style="font-size:9px;">Import</button>
+            </div>
+            <div style="padding:20px;font-size:9px;color:#667085;text-align:center;">表格数据</div>
+          </div>
+        </div>
+        <!-- Inspector -->
+        <div style="background:#FFF;border:1px solid #D8DEE6;border-radius:6px;padding:8px;min-width:100px;font-size:10px;color:#667085;">Inspector</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px;">
+  <h3>对比</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>方案 A — Shell 级容器</h4>
+      <ul>
+        <li>一行改动：MainWindow 的 QStackedWidget 套一个 QFrame</li>
+        <li>所有页面自动受益，不需要改每个 View</li>
+        <li>视觉节奏清晰：Nav | Content | Inspector 三个并排面板</li>
+        <li>Toolbar 用 surface_muted 背景作为 header 区域</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>方案 A 的代价</h4>
+      <ul>
+        <li>Toolbar 在各 View 中写法不统一，需逐个调整样式</li>
+        <li>每个 View 的 toolbar 高度/内容不同，header 区域外观可能不一致</li>
+      </ul>
+    </div>
+  </div>
+  <div class="pros-cons" style="margin-top:8px;">
+    <div class="pros">
+      <h4>方案 B — View 级容器</h4>
+      <ul>
+        <li>每个 View 完全控制自己的视觉边界</li>
+        <li>可以先改一个 View 看效果，再推广</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>方案 B 的代价</h4>
+      <ul>
+        <li>每个 View 都要重复相同的容器代码</li>
+        <li>视觉一致性靠人工维护，容易漂移</li>
+      </ul>
+    </div>
+  </div>
+</div>

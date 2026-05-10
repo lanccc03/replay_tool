@@ -3,7 +3,6 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QFileDialog,
-    QFrame,
     QHBoxLayout,
     QMessageBox,
     QPushButton,
@@ -207,12 +206,8 @@ class TraceLibraryView(QWidget):
         toolbar.addWidget(self._error_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
-        toolbar.setContentsMargins(0, 0, 0, 0)
         toolbar.addStretch(1)
-        toolbar_frame = QFrame()
-        toolbar_frame.setObjectName("ToolbarHeader")
-        toolbar_frame.setLayout(toolbar)
-        layout.addWidget(toolbar_frame)
+        layout.addLayout(toolbar)
 
         self._stack = QStackedWidget()
         self._table = QTableView()

@@ -33,7 +33,6 @@ class UiSmokeTests(unittest.TestCase):
                 self._app.processEvents()
                 _wait_for(lambda: context.task_runner.active_count() == 0, self._app)
 
-                self.assertEqual("next_replay Workbench", window.windowTitle())
                 self.assertEqual(4, window.navigation_count())
                 self.assertEqual("Trace Library", window.current_page_name())
                 self.assertIn("Workspace:", window.workspace_status_text())
