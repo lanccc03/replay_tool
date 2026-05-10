@@ -288,14 +288,6 @@ class ScenariosView(QWidget):
             self._emit_selection()
             self._sync_command_buttons()
 
-    def overview_text(self) -> str:
-        """Return the Scenario Editor overview text.
-
-        Returns:
-            Plain overview preview text.
-        """
-        return self._overview.toPlainText()
-
     def routes_preview_text(self) -> str:
         """Return the route mapping preview text.
 
@@ -306,14 +298,6 @@ class ScenariosView(QWidget):
         if draft is None:
             return ""
         return "\n".join(_route_preview(route) for route in draft.routes)
-
-    def json_preview_text(self) -> str:
-        """Return the read-only JSON preview text.
-
-        Returns:
-            Formatted schema v2 JSON text.
-        """
-        return self._json_preview.toPlainText()
 
     def overview_name_text(self) -> str:
         """Return the editable overview name field text.
@@ -1088,6 +1072,8 @@ class ScenariosView(QWidget):
         self._route_target_combo.setEnabled(has_route and idle)
         self._target_physical_spin.setEnabled(has_route and idle)
         self._run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
+        self._editor_validate_button.setEnabled(has_draft and idle)
+        self._editor_run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
 
     def _sync_draft(self) -> None:
         draft = self._view_model.draft
@@ -1622,13 +1608,6 @@ def _draft_issue_detail(issues: tuple[ScenarioDraftIssue, ...]) -> str:
 
 def _route_preview(route: DraftRouteRow) -> str:
     return f"{route.source_label} -> {route.logical_channel} -> {route.target_label}"
-
-
-def _read_only_text(placeholder: str) -> QTextEdit:
-    text = QTextEdit()
-    text.setReadOnly(True)
-    text.setPlainText(placeholder)
-    return text
 
 
 
