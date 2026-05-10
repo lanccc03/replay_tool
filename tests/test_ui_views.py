@@ -1086,5 +1086,18 @@ class ScenariosViewTests(unittest.TestCase):
             self._app.processEvents()
 
 
+    def test_toolbar_header_frame_exists_in_list_view(self) -> None:
+        view = ScenariosView(ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner()))
+        try:
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            from PySide6.QtWidgets import QFrame
+
+            header = view.findChild(QFrame, "ToolbarHeader")
+            self.assertIsNotNone(header, "ToolbarHeader QFrame should wrap list toolbar")
+        finally:
+            view.close()
+            self._app.processEvents()
+
+
 if __name__ == "__main__":
     unittest.main()

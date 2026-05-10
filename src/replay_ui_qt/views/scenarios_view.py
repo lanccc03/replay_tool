@@ -642,8 +642,12 @@ class ScenariosView(QWidget):
         toolbar.addWidget(self._error_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
+        toolbar.setContentsMargins(0, 0, 0, 0)
         toolbar.addStretch(1)
-        layout.addLayout(toolbar)
+        toolbar_frame = QFrame()
+        toolbar_frame.setObjectName("ToolbarHeader")
+        toolbar_frame.setLayout(toolbar)
+        layout.addWidget(toolbar_frame)
 
         self._list_stack = QStackedWidget()
         self._table = QTableView()
@@ -767,11 +771,15 @@ class ScenariosView(QWidget):
         self._editor_run_button.setEnabled(False)
         self._editor_run_button.clicked.connect(self._run_loaded_scenario)
         top_bar.addWidget(self._editor_run_button)
-        layout.addLayout(top_bar)
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        editor_toolbar = QFrame()
+        editor_toolbar.setObjectName("ToolbarHeader")
+        editor_toolbar.setLayout(top_bar)
+        layout.addWidget(editor_toolbar)
 
         # Section 1: Overview
         overview_label = QLabel("Overview")
-        overview_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        overview_label.setStyleSheet("font-weight: 600; font-size: 13px; color: #667085;")
         layout.addWidget(overview_label)
         form = QFormLayout()
         self._name_edit = QLineEdit()
@@ -787,7 +795,7 @@ class ScenariosView(QWidget):
 
         # Section 2: Traces & Devices
         section_label = QLabel("Traces & Devices")
-        section_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        section_label.setStyleSheet("font-weight: 600; font-size: 13px; color: #667085;")
         layout.addWidget(section_label)
 
         traces = QTableView()
@@ -912,7 +920,7 @@ class ScenariosView(QWidget):
 
         # Section 3: Routes
         routes_label = QLabel("Routes")
-        routes_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        routes_label.setStyleSheet("font-weight: 600; font-size: 13px; color: #667085;")
         layout.addWidget(routes_label)
 
         route_toolbar = QHBoxLayout()
