@@ -1,0 +1,29 @@
+<div style="padding: 20px;">
+  <h2>Implementation Approaches</h2>
+  <p class="subtitle">Two ways to structure the change, with trade-offs</p>
+
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>QStackedWidget inside ScenariosView (Recommended)</h3>
+        <p>Replace the current QSplitter with a QStackedWidget that holds two pages: list_view (toolbar + table) and editor_view (flat editor with all sections). The editor is built directly in ScenariosView. This keeps changes contained to one file and follows the existing pattern.</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>Pros</h4><ul><li>Minimal structural changes — stays in one file</li><li>Matches the "replace in place" UX exactly</li><li>ViewModel already supports draft editing</li></ul></div>
+          <div class="cons"><h4>Cons</h4><ul><li>scenarios_view.py is already 1915 lines — grows larger</li><li>Editor logic mixed with list logic</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Separate ScenarioEditorView class</h3>
+        <p>Extract the editor into its own view file (scenario_editor_view.py). ScenariosView uses QStackedWidget to show either a read-only list page or the separate editor widget. Cleaner separation but involves more new files.</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>Pros</h4><ul><li>Smaller, focused files — editor is 300-400 lines not bundled</li><li>Easier to test independently</li><li>Better follows MVVM separation</li></ul></div>
+          <div class="cons"><h4>Cons</h4><ul><li>More files to create and wire up</li><li>Slightly more boilerplate</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

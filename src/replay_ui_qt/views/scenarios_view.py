@@ -982,6 +982,17 @@ class ScenariosView(QWidget):
             self._open_new_dialog_after_trace_load = True
             self._view_model.load_trace_choices()
             return
+        self._create_draft_and_switch_to_editor()
+
+    def _create_draft_and_switch_to_editor(self) -> None:
+        if not self._view_model.trace_choices:
+            return
+        trace = self._view_model.trace_choices[0]
+        sources = self._view_model.source_choices_for_trace(trace.trace_id)
+        if not sources:
+            return
+        source = sources[0]
+        self._view_model.create_new_scenario_from_trace(trace, source)
         self._switch_to_editor()
 
     def _add_device(self) -> None:
@@ -1156,7 +1167,7 @@ class ScenariosView(QWidget):
     def _sync_trace_choices(self) -> None:
         if getattr(self, '_open_new_dialog_after_trace_load', False):
             self._open_new_dialog_after_trace_load = False
-            self._switch_to_editor()
+            self._create_draft_and_switch_to_editor()
 
     def _sync_edit_controls(self, draft: ScenarioDraft) -> None:
         self._name_edit.blockSignals(True)

@@ -1,0 +1,8 @@
+{"type":"server-started","port":62107,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:62107","screen_dir":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content","state_dir":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/state"}
+{"type":"screen-added","file":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content/layout-comparison.html"}
+{"type":"screen-added","file":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content/editor-approach.html"}
+{"source":"user-event","type":"click","text":"B\n      \n        Replace In-Place (Stack Switch)\n        \"New Scenario\" replaces the table view with the editor view within the same Scenarios page. Clicking Cancel/Back returns to the list view. No new navigation item. This is similar to how many apps handle \"create\" flows inline.","choice":"b","id":null,"timestamp":1778399506746}
+{"type":"screen-added","file":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content/editor-layout.html"}
+{"type":"screen-added","file":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content/approaches.html"}
+{"type":"screen-added","file":"/Users/lanyy/Code/replay_tool/.superpowers/brainstorm/53308-1778399049/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

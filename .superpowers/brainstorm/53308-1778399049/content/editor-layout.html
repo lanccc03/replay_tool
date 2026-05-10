@@ -1,0 +1,59 @@
+<div style="padding: 20px;">
+  <h2>Full Scenario Editor Layout</h2>
+  <p class="subtitle">The editor replaces the list view after clicking "New Scenario"</p>
+
+  <div class="mockup">
+    <div class="mockup-header">Scenario Editor (In-Place, No Tabs)</div>
+    <div class="mockup-body">
+      <div style="background:#1e293b; border-radius:8px; padding:16px;">
+        <div style="display:flex; gap:8px; margin-bottom:16px; align-items:center;">
+          <span style="color:#94a3b8; font-size:14px;">← Back to list</span>
+          <span style="flex:1;"></span>
+          <span class="mock-button" style="background:#2563eb;">Validate</span>
+          <span class="mock-button" style="background:#16a34a;">Run</span>
+        </div>
+
+        <div style="border:1px solid #475569; border-radius:6px; padding:12px; margin-bottom:12px;">
+          <div style="color:white; font-size:13px; font-weight:600; margin-bottom:8px;">📋 Overview</div>
+          <div style="display:flex; gap:24px;">
+            <div><span style="color:#94a3b8; font-size:12px;">Name</span><br/><span class="mock-input" style="width:200px;">replay-scenario-1</span></div>
+            <div><span style="color:#94a3b8; font-size:12px;">Loop</span><br/><input type="checkbox" style="margin-top:4px;"/></div>
+          </div>
+          <div class="placeholder" style="margin-top:8px;">Schema summary text</div>
+        </div>
+
+        <div style="border:1px solid #475569; border-radius:6px; padding:12px; margin-bottom:12px;">
+          <div style="color:white; font-size:13px; font-weight:600; margin-bottom:8px;">🔌 Traces &amp; Devices</div>
+          <div style="display:flex; gap:12px;">
+            <div style="flex:1;">
+              <div style="color:#94a3b8; font-size:12px; margin-bottom:4px;">Traces</div>
+              <div class="placeholder" style="height:60px;">Trace table</div>
+            </div>
+            <div style="flex:1;">
+              <div style="color:#94a3b8; font-size:12px; margin-bottom:4px;">Devices</div>
+              <div class="placeholder" style="height:60px;">Devices table + form</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <div style="color:#94a3b8; font-size:12px; margin-bottom:4px;">Targets</div>
+            <div class="placeholder" style="height:60px;">Targets table + form</div>
+          </div>
+        </div>
+
+        <div style="border:1px solid #475569; border-radius:6px; padding:12px; margin-bottom:12px;">
+          <div style="color:white; font-size:13px; font-weight:600; margin-bottom:8px;">🔀 Routes</div>
+          <div class="placeholder" style="height:60px;">Routes table + form</div>
+        </div>
+
+        <div style="border:1px solid #475569; border-radius:6px; padding:12px;">
+          <div style="color:white; font-size:13px; font-weight:600; margin-bottom:8px;">📄 JSON Preview</div>
+          <div class="placeholder" style="height:80px;">Read-only formatted JSON</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; color:#e2e8f0;">
+    <p>All sections visible at once, scrollable. "← Back" returns to the scenario list. Validate/Run actions are in the top bar.</p>
+  </div>
+</div>

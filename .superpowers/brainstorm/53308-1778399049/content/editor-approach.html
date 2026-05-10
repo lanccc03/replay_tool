@@ -1,0 +1,21 @@
+<div style="padding: 20px;">
+  <h2>Scenario View After Removing Tabs</h2>
+  <p class="subtitle">Two approaches for the "full scenario editor"</p>
+
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>New Navigation Page</h3>
+        <p>"New Scenario" adds a 5th page to the left navigation (like "Scenario Editor"), replacing the dialog with a full-page editor. The existing Scenarios page becomes a read-only list. Running a scenario still navigates to Replay Monitor.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Replace In-Place (Stack Switch)</h3>
+        <p>"New Scenario" replaces the table view with the editor view within the same Scenarios page. Clicking Cancel/Back returns to the list view. No new navigation item. This is similar to how many apps handle "create" flows inline.</p>
+      </div>
+    </div>
+  </div>
+</div>
