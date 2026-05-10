@@ -128,14 +128,6 @@ class ScenariosView(QWidget):
             return ("Scenarios", "选择一个 Scenario 后加载只读 draft preview。")
         return ("Scenario 详情", _scenario_detail(row))
 
-    def refresh_enabled(self) -> bool:
-        """Return whether the refresh button is enabled.
-
-        Returns:
-            True when refresh can be triggered.
-        """
-        return self._refresh_button.isEnabled()
-
     def new_enabled(self) -> bool:
         """Return whether New Scenario is enabled.
 
@@ -144,38 +136,6 @@ class ScenariosView(QWidget):
         """
         return self._new_button.isEnabled()
 
-    def load_enabled(self) -> bool:
-        """Return whether the load button is enabled.
-
-        Returns:
-            True when the selected scenario can be loaded.
-        """
-        return self._load_button.isEnabled()
-
-    def save_enabled(self) -> bool:
-        """Return whether Save Scenario is enabled.
-
-        Returns:
-            True when a loaded draft can be saved.
-        """
-        return self._save_button.isEnabled()
-
-    def validate_enabled(self) -> bool:
-        """Return whether Validate is enabled.
-
-        Returns:
-            True when a loaded draft can be validated.
-        """
-        return self._validate_button.isEnabled()
-
-    def run_enabled(self) -> bool:
-        """Return whether Run is enabled.
-
-        Returns:
-            True when a loaded draft can start a replay session.
-        """
-        return self._run_button.isEnabled()
-
     def delete_enabled(self) -> bool:
         """Return whether Delete is enabled.
 
@@ -183,6 +143,22 @@ class ScenariosView(QWidget):
             True when a selected scenario can be deleted.
         """
         return self._delete_button.isEnabled()
+
+    def validate_enabled(self) -> bool:
+        """Return whether Validate is enabled.
+
+        Returns:
+            True when a loaded draft can be validated.
+        """
+        return self._editor_validate_button.isEnabled()
+
+    def run_enabled(self) -> bool:
+        """Return whether Run is enabled.
+
+        Returns:
+            True when a loaded draft can start a replay session.
+        """
+        return self._editor_run_button.isEnabled()
 
     def add_route_enabled(self) -> bool:
         """Return whether Add Route is enabled.
@@ -231,14 +207,6 @@ class ScenariosView(QWidget):
             True when a target is selected and can be removed.
         """
         return self._remove_target_button.isEnabled()
-
-    def error_details_enabled(self) -> bool:
-        """Return whether the error details button is enabled.
-
-        Returns:
-            True when an error can be opened.
-        """
-        return self._error_button.isEnabled()
 
     def device_issue_text(self) -> str:
         """Return nearby device issue text.
@@ -604,42 +572,11 @@ class ScenariosView(QWidget):
         self._new_button.clicked.connect(self._start_new_scenario)
         toolbar.addWidget(self._new_button)
 
-        self._refresh_button = QPushButton("刷新")
-        self._refresh_button.setToolTip("重新读取当前 workspace 的 Scenario Store")
-        self._refresh_button.clicked.connect(self._view_model.refresh)
-        toolbar.addWidget(self._refresh_button)
-
-        self._load_button = QPushButton("Load Scenario")
-        self._load_button.setEnabled(False)
-        self._load_button.setToolTip("加载选中 Scenario 的只读 draft preview")
-        self._load_button.clicked.connect(self._load_selected_scenario)
-        toolbar.addWidget(self._load_button)
-
-        self._save_button = QPushButton("Save Scenario")
-        self._save_button.setEnabled(False)
-        self._save_button.setToolTip("保存当前 loaded Scenario draft")
-        self._save_button.clicked.connect(self._save_loaded_scenario)
-        toolbar.addWidget(self._save_button)
-        self._validate_button = QPushButton("Validate")
-        self._validate_button.setEnabled(False)
-        self._validate_button.setToolTip("校验并编译当前 loaded Scenario draft")
-        self._validate_button.clicked.connect(self._validate_loaded_scenario)
-        toolbar.addWidget(self._validate_button)
-        self._run_button = QPushButton("Run")
-        self._run_button.setEnabled(False)
-        self._run_button.setToolTip("运行当前 Scenario draft，并在 Replay Monitor 中查看 snapshot")
-        self._run_button.clicked.connect(self._run_loaded_scenario)
-        toolbar.addWidget(self._run_button)
         self._delete_button = QPushButton("Delete")
         self._delete_button.setEnabled(False)
         self._delete_button.setToolTip("删除选中 Scenario")
         self._delete_button.clicked.connect(self._delete_selected_scenario)
         toolbar.addWidget(self._delete_button)
-        self._error_button = QPushButton("错误详情")
-        self._error_button.setEnabled(False)
-        self._error_button.setToolTip("查看可复制的错误详情")
-        self._error_button.clicked.connect(self._show_error_details)
-        toolbar.addWidget(self._error_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
         toolbar.addStretch(1)
@@ -715,7 +652,6 @@ class ScenariosView(QWidget):
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _show_error(self, message: str) -> None:
-        self._error_button.setEnabled(bool(message))
         self._sync_status_badge()
         if message:
             self.inspectorChanged.emit("Scenarios 错误", message)
@@ -723,7 +659,6 @@ class ScenariosView(QWidget):
     def _sync_busy(self, busy: bool) -> None:
         idle = not busy and not self._replay_active
         self._new_button.setEnabled(idle)
-        self._refresh_button.setEnabled(not busy)
         self._sync_command_buttons()
         self._sync_status_badge()
 
@@ -736,11 +671,6 @@ class ScenariosView(QWidget):
             self._status_badge.set_status("Ready", "ready")
         else:
             self._status_badge.set_status("No records", "disabled")
-
-    def _show_error_details(self) -> None:
-        if not self._view_model.error:
-            return
-        self.create_error_dialog().exec()
 
     def _build_editor_view(self) -> QWidget:
         """Build the flat scenario editor page with all sections stacked."""
@@ -966,15 +896,6 @@ class ScenariosView(QWidget):
         self._sync_command_buttons()
         self._emit_selection()
 
-    def _load_selected_scenario(self) -> None:
-        if self._replay_active:
-            return
-        row = self._selected_row()
-        if row is None:
-            return
-        self._view_model.load_scenario(row.scenario_id)
-        self._switch_to_editor()
-
     def _start_new_scenario(self) -> None:
         if self._replay_active:
             return
@@ -1027,11 +948,6 @@ class ScenariosView(QWidget):
         if index >= 0:
             self._view_model.remove_route(index)
 
-    def _save_loaded_scenario(self) -> None:
-        if self._replay_active:
-            return
-        self._view_model.save_loaded_scenario()
-
     def _validate_loaded_scenario(self) -> None:
         if self._replay_active:
             return
@@ -1066,9 +982,6 @@ class ScenariosView(QWidget):
         has_target = has_draft and target_index >= 0
         idle = not self._view_model.busy and not self._replay_active
         self._new_button.setEnabled(idle)
-        self._load_button.setEnabled(row is not None and idle)
-        self._save_button.setEnabled(has_draft and idle)
-        self._validate_button.setEnabled(has_draft and idle)
         self._delete_button.setEnabled(row is not None and idle)
         self._add_device_button.setEnabled(has_draft and idle)
         self._remove_device_button.setEnabled(has_device and idle)
@@ -1095,7 +1008,6 @@ class ScenariosView(QWidget):
         self._route_logical_spin.setEnabled(has_route and idle)
         self._route_target_combo.setEnabled(has_route and idle)
         self._target_physical_spin.setEnabled(has_route and idle)
-        self._run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
         self._editor_validate_button.setEnabled(has_draft and idle)
         self._editor_run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
 

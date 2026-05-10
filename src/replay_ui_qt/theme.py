@@ -55,13 +55,10 @@ QMainWindow {
     background: #F6F7F9;
     color: #1F2933;
 }
-QFrame#TopStatusBar, QFrame#InspectorPanel, QFrame#NavigationPanel {
+QFrame#TopStatusBar, QFrame#InspectorPanel, QFrame#NavigationPanel, QFrame#ContentPanel{
     background: #FFFFFF;
     border: 1px solid #D8DEE6;
-}
-QFrame#ContentPanel {
-    background: #FFFFFF;
-    border: 1px solid #D8DEE6;
+    border-radius: 6px;
 }
 QFrame#ToolbarHeader {
     background: #EEF2F5;

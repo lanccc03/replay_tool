@@ -70,14 +70,6 @@ class TraceLibraryView(QWidget):
             return ("Trace Library", "选择一条 Trace 记录查看 original path、cache path 和 cache 状态。")
         return ("Trace 详情", _trace_detail(row, self._inspection_for(row)))
 
-    def refresh_enabled(self) -> bool:
-        """Return whether the refresh button is enabled.
-
-        Returns:
-            True when refresh can be triggered.
-        """
-        return self._refresh_button.isEnabled()
-
     def import_enabled(self) -> bool:
         """Return whether the import button is enabled.
 
@@ -85,22 +77,6 @@ class TraceLibraryView(QWidget):
             True when an import can be triggered.
         """
         return self._import_button.isEnabled()
-
-    def inspect_enabled(self) -> bool:
-        """Return whether the inspect button is enabled.
-
-        Returns:
-            True when the selected row can be inspected.
-        """
-        return self._inspect_button.isEnabled()
-
-    def rebuild_enabled(self) -> bool:
-        """Return whether the rebuild button is enabled.
-
-        Returns:
-            True when the selected row can rebuild its cache.
-        """
-        return self._rebuild_button.isEnabled()
 
     def delete_enabled(self) -> bool:
         """Return whether the delete button is enabled.
@@ -120,14 +96,6 @@ class TraceLibraryView(QWidget):
             self._table.selectRow(row)
             self._emit_selection()
             self._sync_command_buttons()
-
-    def error_details_enabled(self) -> bool:
-        """Return whether the error details button is enabled.
-
-        Returns:
-            True when an error can be opened.
-        """
-        return self._error_button.isEnabled()
 
     def status_badge_state(self) -> tuple[str, str]:
         """Return status badge text and semantic key.
@@ -172,38 +140,16 @@ class TraceLibraryView(QWidget):
         layout.setSpacing(10)
 
         toolbar = QHBoxLayout()
-        self._refresh_button = QPushButton("刷新")
-        self._refresh_button.setToolTip("重新读取当前 workspace 的 Trace Library")
-        self._refresh_button.clicked.connect(self._view_model.refresh)
-        toolbar.addWidget(self._refresh_button)
-
         self._import_button = QPushButton("Import Trace")
         self._import_button.setToolTip("导入 ASC Trace")
         self._import_button.clicked.connect(self._choose_import_trace)
         toolbar.addWidget(self._import_button)
-
-        self._inspect_button = QPushButton("Inspect")
-        self._inspect_button.setEnabled(False)
-        self._inspect_button.setToolTip("读取选中 Trace 的 source 和 message 摘要")
-        self._inspect_button.clicked.connect(self._inspect_selected_trace)
-        toolbar.addWidget(self._inspect_button)
-
-        self._rebuild_button = QPushButton("Rebuild Cache")
-        self._rebuild_button.setEnabled(False)
-        self._rebuild_button.setToolTip("重建选中 Trace 的二进制 cache")
-        self._rebuild_button.clicked.connect(self._rebuild_selected_trace_cache)
-        toolbar.addWidget(self._rebuild_button)
 
         self._delete_button = QPushButton("Delete")
         self._delete_button.setEnabled(False)
         self._delete_button.setToolTip("删除选中 Trace 和 managed files")
         self._delete_button.clicked.connect(self._delete_selected_trace)
         toolbar.addWidget(self._delete_button)
-        self._error_button = QPushButton("错误详情")
-        self._error_button.setEnabled(False)
-        self._error_button.setToolTip("查看可复制的错误详情")
-        self._error_button.clicked.connect(self._show_error_details)
-        toolbar.addWidget(self._error_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
         toolbar.addStretch(1)
@@ -236,13 +182,11 @@ class TraceLibraryView(QWidget):
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _show_error(self, message: str) -> None:
-        self._error_button.setEnabled(bool(message))
         self._sync_status_badge()
         if message:
             self.inspectorChanged.emit("Trace Library 错误", message)
 
     def _sync_busy(self, busy: bool) -> None:
-        self._refresh_button.setEnabled(not busy)
         self._import_button.setEnabled(not busy)
         self._sync_command_buttons()
         self._sync_status_badge()
@@ -257,11 +201,6 @@ class TraceLibraryView(QWidget):
         else:
             self._status_badge.set_status("No records", "disabled")
 
-    def _show_error_details(self) -> None:
-        if not self._view_model.error:
-            return
-        self.create_error_dialog().exec()
-
     def _choose_import_trace(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
@@ -272,17 +211,9 @@ class TraceLibraryView(QWidget):
         if path:
             self._view_model.import_trace(path)
 
-    def _inspect_selected_trace(self) -> None:
-        row = self._selected_row()
-        if row is None:
-            return
-        self._view_model.inspect_trace(row.trace_id)
-
     def _sync_command_buttons(self) -> None:
         row = self._selected_row()
         enabled = row is not None and not self._view_model.busy
-        self._inspect_button.setEnabled(enabled)
-        self._rebuild_button.setEnabled(enabled)
         self._delete_button.setEnabled(enabled)
 
     def _sync_inspection(self) -> None:
@@ -294,12 +225,6 @@ class TraceLibraryView(QWidget):
     def _handle_selection_changed(self) -> None:
         self._sync_command_buttons()
         self._emit_selection()
-
-    def _rebuild_selected_trace_cache(self) -> None:
-        row = self._selected_row()
-        if row is None:
-            return
-        self._view_model.rebuild_trace_cache(row.trace_id)
 
     def _delete_selected_trace(self) -> None:
         row = self._selected_row()

@@ -483,21 +483,19 @@ class TraceLibraryViewTests(unittest.TestCase):
     def test_refresh_button_is_disabled_while_trace_refresh_is_busy(self) -> None:
         release = threading.Event()
         trace_app = _TraceApp(release=release)
-        view = TraceLibraryView(TraceLibraryViewModel(trace_app, _runner()))
+        view_model = TraceLibraryViewModel(trace_app, _runner())
+        view = TraceLibraryView(view_model)
         try:
             _wait_for(
                 lambda: trace_app.calls == 1
-                and not view.refresh_enabled()
                 and not view.import_enabled()
-                and not view.inspect_enabled()
-                and not view.rebuild_enabled()
                 and not view.delete_enabled()
                 and view.status_badge_state() == ("Loading", "running"),
                 self._app,
             )
 
             release.set()
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.import_enabled(), self._app)
             self.assertEqual(("No records", "disabled"), view.status_badge_state())
         finally:
             release.set()
@@ -507,18 +505,15 @@ class TraceLibraryViewTests(unittest.TestCase):
     def test_inspect_button_follows_trace_selection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             record = _trace_record(tmp)
-            view = TraceLibraryView(TraceLibraryViewModel(_TraceApp(records=[record]), _runner()))
+            view_model = TraceLibraryViewModel(_TraceApp(records=[record]), _runner())
+            view = TraceLibraryView(view_model)
             try:
-                _wait_for(lambda: view.refresh_enabled(), self._app)
+                _wait_for(lambda: not view_model.busy and view.import_enabled(), self._app)
                 self.assertTrue(view.import_enabled())
-                self.assertFalse(view.inspect_enabled())
-                self.assertFalse(view.rebuild_enabled())
                 self.assertFalse(view.delete_enabled())
 
                 view.select_row(0)
 
-                self.assertTrue(view.inspect_enabled())
-                self.assertTrue(view.rebuild_enabled())
                 self.assertTrue(view.delete_enabled())
 
                 dialog = view.create_delete_confirmation_dialog()
@@ -538,7 +533,7 @@ class TraceLibraryViewTests(unittest.TestCase):
             view_model = TraceLibraryViewModel(_TraceApp(records=[record], inspection=_inspection(record)), _runner())
             view = TraceLibraryView(view_model)
             try:
-                _wait_for(lambda: view.refresh_enabled(), self._app)
+                _wait_for(lambda: not view_model.busy, self._app)
                 view.select_row(0)
                 view_model.inspect_trace(record.trace_id)
                 _wait_for(lambda: not view_model.busy and view_model.inspection is not None, self._app)
@@ -564,7 +559,7 @@ class TraceLibraryViewTests(unittest.TestCase):
             view_model = TraceLibraryViewModel(_TraceApp(records=[record], delete_result=result), _runner())
             view = TraceLibraryView(view_model)
             try:
-                _wait_for(lambda: view.refresh_enabled(), self._app)
+                _wait_for(lambda: not view_model.busy, self._app)
                 view.select_row(0)
                 view_model.delete_trace(record.trace_id)
                 _wait_for(lambda: not view_model.busy and view_model.delete_result is not None, self._app)
@@ -580,8 +575,7 @@ class TraceLibraryViewTests(unittest.TestCase):
     def test_error_details_button_and_dialog_follow_trace_error_state(self) -> None:
         view = TraceLibraryView(TraceLibraryViewModel(_TraceApp(error=RuntimeError("trace store offline")), _runner()))
         try:
-            self.assertFalse(view.error_details_enabled())
-            _wait_for(lambda: view.error_details_enabled(), self._app)
+            _wait_for(lambda: view.status_badge_state() == ("Failed", "failed"), self._app)
 
             self.assertEqual(("Failed", "failed"), view.status_badge_state())
             dialog = view.create_error_dialog()
@@ -597,9 +591,10 @@ class TraceLibraryViewTests(unittest.TestCase):
     def test_toolbar_header_frame_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             record = _trace_record(tmp)
-            view = TraceLibraryView(TraceLibraryViewModel(_TraceApp(records=[record]), _runner()))
+            view_model = TraceLibraryViewModel(_TraceApp(records=[record]), _runner())
+            view = TraceLibraryView(view_model)
             try:
-                _wait_for(lambda: view.refresh_enabled(), self._app)
+                _wait_for(lambda: not view_model.busy, self._app)
                 from PySide6.QtWidgets import QFrame
                 header = view.findChild(QFrame, "ToolbarHeader")
                 self.assertIsNone(header, "Toolbar should be bare QHBoxLayout, not wrapped in ToolbarHeader QFrame")
@@ -697,13 +692,12 @@ class ScenariosViewTests(unittest.TestCase):
     def test_refresh_button_is_disabled_while_scenario_refresh_is_busy(self) -> None:
         release = threading.Event()
         scenario_app = _ScenarioApp(release=release)
-        view = ScenariosView(ScenariosViewModel(scenario_app, _runner()))
+        view_model = ScenariosViewModel(scenario_app, _runner())
+        view = ScenariosView(view_model)
         try:
             _wait_for(
                 lambda: scenario_app.calls == 1
                 and not view.new_enabled()
-                and not view.refresh_enabled()
-                and not view.load_enabled()
                 and not view.add_route_enabled()
                 and not view.remove_route_enabled()
                 and view.status_badge_state() == ("Loading", "running"),
@@ -711,7 +705,7 @@ class ScenariosViewTests(unittest.TestCase):
             )
 
             release.set()
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             self.assertTrue(view.new_enabled())
             self.assertEqual(("No records", "disabled"), view.status_badge_state())
         finally:
@@ -723,9 +717,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
-            self.assertFalse(view.load_enabled())
-            self.assertFalse(view.save_enabled())
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             self.assertFalse(view.validate_enabled())
             self.assertFalse(view.run_enabled())
             self.assertFalse(view.delete_enabled())
@@ -733,8 +725,6 @@ class ScenariosViewTests(unittest.TestCase):
 
             view.select_row(0)
 
-            self.assertTrue(view.load_enabled())
-            self.assertFalse(view.save_enabled())
             self.assertFalse(view.validate_enabled())
             self.assertFalse(view.run_enabled())
             self.assertTrue(view.delete_enabled())
@@ -750,7 +740,6 @@ class ScenariosViewTests(unittest.TestCase):
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
 
-            self.assertTrue(view.save_enabled())
             self.assertTrue(view.validate_enabled())
             self.assertTrue(view.run_enabled())
             self.assertTrue(view.delete_enabled())
@@ -766,7 +755,7 @@ class ScenariosViewTests(unittest.TestCase):
         emitted: list[tuple[dict[str, object], str]] = []
         view.runRequested.connect(lambda body, base_dir: emitted.append((dict(body), str(base_dir))))
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -781,7 +770,6 @@ class ScenariosViewTests(unittest.TestCase):
             view.set_replay_active(True)
             before = view.overview_name_text()
 
-            self.assertFalse(view.save_enabled())
             self.assertFalse(view.validate_enabled())
             self.assertFalse(view.run_enabled())
             self.assertFalse(view.add_route_enabled())
@@ -847,7 +835,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -864,7 +852,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -884,7 +872,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -907,7 +895,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -947,7 +935,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -975,7 +963,7 @@ class ScenariosViewTests(unittest.TestCase):
             view_model = ScenariosViewModel(scenario_app, _runner())
             view = ScenariosView(view_model)
             try:
-                _wait_for(lambda: view.refresh_enabled(), self._app)
+                _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
                 view.select_row(0)
                 view_model.load_scenario("scenario-1")
                 _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -1006,7 +994,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -1030,7 +1018,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -1051,7 +1039,7 @@ class ScenariosViewTests(unittest.TestCase):
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             view.select_row(0)
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
@@ -1062,7 +1050,6 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertEqual("Scenario 删除结果", title)
             self.assertIn("Scenario ID: scenario-1", body)
             self.assertIn("Routes: 1", body)
-            self.assertFalse(view.save_enabled())
             self.assertFalse(view.validate_enabled())
         finally:
             view.close()
@@ -1071,8 +1058,7 @@ class ScenariosViewTests(unittest.TestCase):
     def test_error_details_button_and_dialog_follow_scenario_error_state(self) -> None:
         view = ScenariosView(ScenariosViewModel(_ScenarioApp(error=RuntimeError("project store offline")), _runner()))
         try:
-            self.assertFalse(view.error_details_enabled())
-            _wait_for(lambda: view.error_details_enabled(), self._app)
+            _wait_for(lambda: view.status_badge_state() == ("Failed", "failed"), self._app)
 
             self.assertEqual(("Failed", "failed"), view.status_badge_state())
             dialog = view.create_error_dialog()
@@ -1087,9 +1073,10 @@ class ScenariosViewTests(unittest.TestCase):
 
 
     def test_toolbar_header_frame_exists_in_list_view(self) -> None:
-        view = ScenariosView(ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner()))
+        view_model = ScenariosViewModel(_ScenarioApp(records=[_scenario_record()]), _runner())
+        view = ScenariosView(view_model)
         try:
-            _wait_for(lambda: view.refresh_enabled(), self._app)
+            _wait_for(lambda: not view_model.busy and view.new_enabled(), self._app)
             from PySide6.QtWidgets import QFrame
 
             header = view.findChild(QFrame, "ToolbarHeader")
