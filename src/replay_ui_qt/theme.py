@@ -51,7 +51,7 @@ def monospace_font(point_size: int = 9) -> QFont:
 
 def _stylesheet() -> str:
     return """
-QMainWindow, QWidget {
+QMainWindow {
     background: #F6F7F9;
     color: #1F2933;
 }
