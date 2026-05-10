@@ -668,7 +668,6 @@ class ScenariosView(QWidget):
         toolbar.addStretch(1)
         layout.addLayout(toolbar)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
         self._list_stack = QStackedWidget()
         self._table = QTableView()
         self._table.setAlternatingRowColors(True)
@@ -686,10 +685,30 @@ class ScenariosView(QWidget):
         self._empty = EmptyState("No scenarios.", "使用 CLI 保存 schema v2 scenario 后，这里会显示 Scenario Store 记录。")
         self._list_stack.addWidget(self._table)
         self._list_stack.addWidget(self._empty)
-        splitter.addWidget(self._list_stack)
-        splitter.addWidget(self._build_editor_preview())
-        splitter.setSizes([280, 360])
-        layout.addWidget(splitter, 1)
+
+        self._page_stack = QStackedWidget()
+
+        # Page 0: list view (table or empty state)
+        list_page = QWidget()
+        list_layout = QVBoxLayout(list_page)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self._list_stack)
+        self._page_stack.addWidget(list_page)
+
+        # Page 1: editor view (existing preview for now)
+        editor_page = self._build_editor_preview()
+        self._page_stack.addWidget(editor_page)
+
+        self._page_stack.setCurrentIndex(0)
+        layout.addWidget(self._page_stack, 1)
+
+    def _switch_to_editor(self) -> None:
+        """Switch the page stack to the editor view."""
+        self._page_stack.setCurrentIndex(1)
+
+    def _switch_to_list(self) -> None:
+        """Switch the page stack back to the list and discard the draft."""
+        self._page_stack.setCurrentIndex(0)
 
     def _sync_rows(self) -> None:
         self._model.set_rows(self._view_model.rows)
@@ -951,6 +970,7 @@ class ScenariosView(QWidget):
         if row is None:
             return
         self._view_model.load_scenario(row.scenario_id)
+        self._switch_to_editor()
 
     def _start_new_scenario(self) -> None:
         if self._replay_active:
@@ -959,7 +979,7 @@ class ScenariosView(QWidget):
             self._open_new_dialog_after_trace_load = True
             self._view_model.load_trace_choices()
             return
-        self._show_new_scenario_dialog()
+        self._switch_to_editor()
 
     def _show_new_scenario_dialog(self) -> None:
         dialog = self.create_new_dialog()
@@ -1163,7 +1183,7 @@ class ScenariosView(QWidget):
     def _sync_trace_choices(self) -> None:
         if self._open_new_dialog_after_trace_load:
             self._open_new_dialog_after_trace_load = False
-            self._show_new_scenario_dialog()
+            self._switch_to_editor()
         elif self._open_add_route_dialog_after_trace_load:
             self._open_add_route_dialog_after_trace_load = False
             self._show_add_route_dialog()
