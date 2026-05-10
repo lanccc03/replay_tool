@@ -321,6 +321,8 @@ class ScenariosView(QWidget):
         Args:
             name: New scenario name.
         """
+        if self._replay_active:
+            return
         self._name_edit.setText(str(name))
         self._apply_name_edit()
 
@@ -563,6 +565,22 @@ class ScenariosView(QWidget):
     def trigger_remove_target(self) -> None:
         """Trigger Remove Target for tests and keyboard workflows."""
         self._remove_selected_target()
+
+    def current_page_index(self) -> int:
+        """Return the current page stack index (0=list, 1=editor)."""
+        return self._page_stack.currentIndex()
+
+    def trigger_new_scenario(self) -> None:
+        """Trigger New Scenario for tests."""
+        self._start_new_scenario()
+
+    def switch_to_editor(self) -> None:
+        """Switch to the editor page for tests."""
+        self._switch_to_editor()
+
+    def trigger_back_to_list(self) -> None:
+        """Trigger Back to list button for tests."""
+        self._back_to_list()
 
     def create_delete_confirmation_dialog(self):
         """Create the delete confirmation dialog for the selected scenario.

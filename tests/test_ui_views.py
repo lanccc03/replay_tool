@@ -766,7 +766,7 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertEqual("C:/data", emitted[0][1])
 
             view.set_replay_active(True)
-            before = view.json_preview_text()
+            before = view.overview_name_text()
 
             self.assertFalse(view.save_enabled())
             self.assertFalse(view.validate_enabled())
@@ -779,7 +779,7 @@ class ScenariosViewTests(unittest.TestCase):
             self.assertFalse(view.remove_target_enabled())
 
             view.edit_overview_name("blocked-edit")
-            self.assertEqual(before, view.json_preview_text())
+            self.assertEqual(before, view.overview_name_text())
 
             view.set_replay_active(False)
             self.assertTrue(view.run_enabled())
@@ -787,7 +787,7 @@ class ScenariosViewTests(unittest.TestCase):
             view.close()
             self._app.processEvents()
 
-    def test_new_scenario_dialog_exposes_trace_and_source_choices(self) -> None:
+    def test_new_scenario_switches_to_editor_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             trace = _trace_record(tmp)
             scenario_app = _ScenarioApp(
@@ -800,32 +800,14 @@ class ScenariosViewTests(unittest.TestCase):
                 _wait_for(lambda: not view_model.busy, self._app)
                 view_model.load_trace_choices()
                 _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
-                dialog = view.create_new_dialog()
-                try:
-                    self.assertTrue(dialog.has_create_action())
-                    self.assertIn("sample.asc", dialog.body_text())
-                    self.assertIn("CH0 CANFD", dialog.body_text())
-                finally:
-                    dialog.close()
+                self.assertEqual(0, view.current_page_index())
+                view.trigger_new_scenario()
+                self.assertEqual(1, view.current_page_index())
             finally:
                 view.close()
                 self._app.processEvents()
 
-    def test_new_scenario_dialog_reports_no_traces(self) -> None:
-        view_model = ScenariosViewModel(_ScenarioApp(trace_records=[]), _runner())
-        view = ScenariosView(view_model)
-        try:
-            dialog = view.create_new_dialog()
-            try:
-                self.assertFalse(dialog.has_create_action())
-                self.assertIn("No imported traces", dialog.body_text())
-            finally:
-                dialog.close()
-        finally:
-            view.close()
-            self._app.processEvents()
-
-    def test_add_route_dialog_exposes_trace_source_and_channel_choices(self) -> None:
+    def test_add_route_button_adds_route_in_editor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             trace = _trace_record(tmp)
             scenario_app = _ScenarioApp(
@@ -840,36 +822,31 @@ class ScenariosViewTests(unittest.TestCase):
                 _wait_for(lambda: not view_model.busy and len(view_model.trace_choices) == 1, self._app)
                 source = view_model.source_choices_for_trace(trace.trace_id)[0]
                 view_model.create_new_scenario_from_trace(view_model.trace_choices[0], source)
-
-                dialog = view.create_add_route_dialog()
-                try:
-                    self.assertTrue(dialog.has_add_action())
-                    self.assertIn("Add Route", dialog.body_text())
-                    self.assertIn("sample.asc", dialog.body_text())
-                    self.assertIn("CH0 CANFD", dialog.body_text())
-                    self.assertIn("Logical Channel: 1", dialog.body_text())
-                    self.assertIn("mock0 / CH0 CANFD", dialog.body_text())
-                finally:
-                    dialog.close()
+                view.switch_to_editor()
+                self.assertTrue(view.add_route_enabled())
+                self.assertIn("trace-1 / CH0 CANFD", view.routes_preview_text())
             finally:
                 view.close()
                 self._app.processEvents()
 
-    def test_add_route_dialog_reports_no_traces(self) -> None:
-        view_model = ScenariosViewModel(_ScenarioApp(trace_records=[]), _runner())
+    def test_back_button_returns_to_list(self) -> None:
+        scenario_app = _ScenarioApp(records=[_scenario_record()])
+        view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
         try:
-            dialog = view.create_add_route_dialog()
-            try:
-                self.assertFalse(dialog.has_add_action())
-                self.assertIn("No imported traces", dialog.body_text())
-            finally:
-                dialog.close()
+            _wait_for(lambda: view.refresh_enabled(), self._app)
+            view.select_row(0)
+            view_model.load_scenario("scenario-1")
+            _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
+            view.switch_to_editor()
+            self.assertEqual(1, view.current_page_index())
+            view.trigger_back_to_list()
+            self.assertEqual(0, view.current_page_index())
         finally:
             view.close()
             self._app.processEvents()
 
-    def test_loaded_scenario_draft_is_rendered_in_preview_tabs(self) -> None:
+    def test_loaded_scenario_draft_is_rendered_in_editor(self) -> None:
         scenario_app = _ScenarioApp(records=[_scenario_record()])
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
@@ -879,11 +856,9 @@ class ScenariosViewTests(unittest.TestCase):
             view_model.load_scenario("scenario-1")
             _wait_for(lambda: not view_model.busy and view_model.draft is not None, self._app)
 
-            self.assertIn("demo-scenario", view.overview_text())
             self.assertEqual("demo-scenario", view.overview_name_text())
             self.assertFalse(view.overview_loop_checked())
             self.assertIn("trace1 / CH0 CANFD -> 0 -> mock0 / CH0 CANFD", view.routes_preview_text())
-            self.assertIn('"schema_version": 2', view.json_preview_text())
             _title, body = view.inspector_snapshot()
             self.assertIn("Scenario ID: scenario-1", body)
             self.assertIn("Routes: 1", body)
@@ -891,7 +866,7 @@ class ScenariosViewTests(unittest.TestCase):
             view.close()
             self._app.processEvents()
 
-    def test_overview_and_route_edits_update_preview_and_json(self) -> None:
+    def test_overview_and_route_edits_update_editor(self) -> None:
         scenario_app = _ScenarioApp(records=[_scenario_record()])
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
@@ -906,18 +881,15 @@ class ScenariosViewTests(unittest.TestCase):
             view.edit_route_logical_channel(4)
             view.edit_target_physical_channel(2)
 
-            self.assertIn("edited-scenario", view.overview_text())
             self.assertEqual("edited-scenario", view.overview_name_text())
             self.assertTrue(view.overview_loop_checked())
             self.assertIn("trace1 / CH0 CANFD -> 4 -> mock0 / CH2 CANFD", view.routes_preview_text())
-            self.assertIn('"name": "edited-scenario"', view.json_preview_text())
-            self.assertIn('"loop": true', view.json_preview_text())
             self.assertTrue(view.run_enabled())
         finally:
             view.close()
             self._app.processEvents()
 
-    def test_device_and_target_editors_update_preview_and_lock_with_replay(self) -> None:
+    def test_device_and_target_editors_update_and_lock_with_replay(self) -> None:
         scenario_app = _ScenarioApp(records=[_scenario_record()])
         view_model = ScenariosViewModel(scenario_app, _runner())
         view = ScenariosView(view_model)
@@ -942,14 +914,6 @@ class ScenariosViewTests(unittest.TestCase):
             view.edit_target_resistance_enabled(False)
             view.edit_target_listen_only(True)
             view.edit_target_tx_echo(True)
-
-            self.assertIn('"driver": "tongxing"', view.json_preview_text())
-            self.assertIn('"sdk_root": "C:/TSMaster"', view.json_preview_text())
-            self.assertIn('"application": "BenchApp"', view.json_preview_text())
-            self.assertIn('"device_index": 3', view.json_preview_text())
-            self.assertIn('"bus": "CAN"', view.json_preview_text())
-            self.assertIn('"nominal_baud": 250000', view.json_preview_text())
-            self.assertIn('"listen_only": true', view.json_preview_text())
 
             view.set_replay_active(True)
             self.assertFalse(view.add_device_enabled())
@@ -987,7 +951,7 @@ class ScenariosViewTests(unittest.TestCase):
             view.close()
             self._app.processEvents()
 
-    def test_route_source_target_edits_update_selected_route_preview_and_json(self) -> None:
+    def test_route_source_target_edits_update_selected_route(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             trace = _trace_record(tmp, trace_id="trace1")
             scenario_app = _ScenarioApp(
@@ -1018,8 +982,6 @@ class ScenariosViewTests(unittest.TestCase):
                 view.edit_route_source("source0")
 
                 self.assertIn("trace1 / CH0 CANFD -> 5 -> mock0 / CH1 CANFD", view.routes_preview_text())
-                self.assertIn('"target": "mock0-ch1-canfd"', view.json_preview_text())
-                self.assertIn('"logical_channel": 5', view.json_preview_text())
                 self.assertTrue(view.remove_route_enabled())
                 self.assertTrue(view.run_enabled())
             finally:
