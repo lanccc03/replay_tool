@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -102,8 +98,6 @@ class ScenariosView(QWidget):
             )
         )
         self._build_ui()
-        self._open_new_dialog_after_trace_load = False
-        self._open_add_route_dialog_after_trace_load = False
         self._view_model.rowsChanged.connect(self._sync_rows)
         self._view_model.statusMessageChanged.connect(lambda message: self.inspectorChanged.emit("Scenarios", message))
         self._view_model.errorChanged.connect(self._show_error)
@@ -551,22 +545,6 @@ class ScenariosView(QWidget):
         self._replay_active = value
         self._sync_command_buttons()
 
-    def create_new_dialog(self):
-        """Create a New Scenario dialog from current trace choices.
-
-        Returns:
-            New Scenario dialog for tests or user interaction.
-        """
-        return NewScenarioDialog(self, self._view_model)
-
-    def create_add_route_dialog(self):
-        """Create an Add Route dialog from current trace choices.
-
-        Returns:
-            Add Route dialog for tests or user interaction.
-        """
-        return AddRouteDialog(self, self._view_model)
-
     def create_error_dialog(self):
         """Create the current error details dialog.
 
@@ -913,7 +891,6 @@ class ScenariosView(QWidget):
         self._add_route_button = QPushButton("Add Route")
         self._add_route_button.setEnabled(False)
         self._add_route_button.setToolTip("从已导入 Trace source 添加一条 route")
-        self._add_route_button.clicked.connect(self._start_add_route)
         toolbar.addWidget(self._add_route_button)
         self._remove_route_button = QPushButton("Remove Route")
         self._remove_route_button.setEnabled(False)
@@ -980,34 +957,6 @@ class ScenariosView(QWidget):
             self._view_model.load_trace_choices()
             return
         self._switch_to_editor()
-
-    def _show_new_scenario_dialog(self) -> None:
-        dialog = self.create_new_dialog()
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            trace, source, name = dialog.selection()
-            if trace is not None and source is not None:
-                self._view_model.create_new_scenario_from_trace(trace, source, name=name)
-
-    def _start_add_route(self) -> None:
-        if self._replay_active or self._view_model.draft is None:
-            return
-        if not self._view_model.trace_choices:
-            self._open_add_route_dialog_after_trace_load = True
-            self._view_model.load_trace_choices()
-            return
-        self._show_add_route_dialog()
-
-    def _show_add_route_dialog(self) -> None:
-        dialog = self.create_add_route_dialog()
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            trace, source, logical_channel, target_id = dialog.selection()
-            if trace is not None and source is not None and target_id:
-                self._view_model.add_route_from_trace(
-                    trace,
-                    source,
-                    logical_channel=logical_channel,
-                    target_id=target_id,
-                )
 
     def _add_device(self) -> None:
         if self._replay_active:
@@ -1181,12 +1130,9 @@ class ScenariosView(QWidget):
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _sync_trace_choices(self) -> None:
-        if self._open_new_dialog_after_trace_load:
+        if getattr(self, '_open_new_dialog_after_trace_load', False):
             self._open_new_dialog_after_trace_load = False
             self._switch_to_editor()
-        elif self._open_add_route_dialog_after_trace_load:
-            self._open_add_route_dialog_after_trace_load = False
-            self._show_add_route_dialog()
 
     def _sync_edit_controls(self, draft: ScenarioDraft) -> None:
         self._name_edit.blockSignals(True)
@@ -1660,275 +1606,5 @@ def _read_only_text(placeholder: str) -> QTextEdit:
     return text
 
 
-class NewScenarioDialog(QDialog):
-    """Dialog for creating a minimal scenario draft from one imported trace."""
-
-    def __init__(self, parent: QWidget | None, view_model: ScenariosViewModel) -> None:
-        """Create the new scenario dialog.
-
-        Args:
-            parent: Parent Qt widget.
-            view_model: Scenarios ViewModel used for trace/source choices.
-        """
-        super().__init__(parent)
-        self._view_model = view_model
-        self._source_choices: tuple[ScenarioSourceChoice, ...] = ()
-        self._build_ui()
-        self._sync_trace_choices()
-
-    def selection(self) -> tuple[ScenarioTraceChoice | None, ScenarioSourceChoice | None, str]:
-        """Return the selected trace, source, and scenario name.
-
-        Returns:
-            Tuple of selected trace choice, source choice, and name text.
-        """
-        trace = self._current_trace()
-        source = self._current_source()
-        return trace, source, self._name_edit.text().strip()
-
-    def has_create_action(self) -> bool:
-        """Return whether the dialog can create a draft.
-
-        Returns:
-            True when both trace and source are selected.
-        """
-        return self._buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
-
-    def body_text(self) -> str:
-        """Return visible dialog text used by tests.
-
-        Returns:
-            Combined status and current selector text.
-        """
-        return "\n".join(
-            (
-                self.windowTitle(),
-                self._empty_label.text(),
-                self._trace_combo.currentText(),
-                self._source_combo.currentText(),
-            )
-        )
-
-    def _build_ui(self) -> None:
-        self.setWindowTitle("New Scenario")
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        self._name_edit = QLineEdit()
-        self._trace_combo = QComboBox()
-        self._source_combo = QComboBox()
-        self._trace_combo.currentIndexChanged.connect(self._handle_trace_changed)
-        form.addRow("Scenario Name", self._name_edit)
-        form.addRow("Trace", self._trace_combo)
-        form.addRow("Source", self._source_combo)
-        layout.addLayout(form)
-        self._empty_label = QLabel("")
-        layout.addWidget(self._empty_label)
-        self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self._buttons.accepted.connect(self.accept)
-        self._buttons.rejected.connect(self.reject)
-        layout.addWidget(self._buttons)
-
-    def _sync_trace_choices(self) -> None:
-        self._trace_combo.clear()
-        for trace in self._view_model.trace_choices:
-            self._trace_combo.addItem(f"{trace.name} ({trace.event_count} frames)", trace)
-        if self._view_model.trace_choices:
-            self._empty_label.setText("")
-            self._handle_trace_changed(0)
-        else:
-            self._empty_label.setText("No imported traces. Import ASC in Trace Library first.")
-            self._source_combo.clear()
-            self._sync_ok_button()
-
-    def _handle_trace_changed(self, _index: int) -> None:
-        trace = self._current_trace()
-        self._source_combo.clear()
-        self._source_choices = ()
-        if trace is None:
-            self._sync_ok_button()
-            return
-        self._name_edit.setText(f"replay-{Path(trace.name).stem or 'trace'}")
-        try:
-            self._source_choices = self._view_model.source_choices_for_trace(trace.trace_id)
-        except Exception as exc:
-            self._empty_label.setText(str(exc))
-            self._sync_ok_button()
-            return
-        for source in self._source_choices:
-            self._source_combo.addItem(source.label, source)
-        if not self._source_choices:
-            self._empty_label.setText("Selected trace has no source summaries.")
-        else:
-            self._empty_label.setText("")
-        self._sync_ok_button()
-
-    def _sync_ok_button(self) -> None:
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            self._current_trace() is not None and self._current_source() is not None
-        )
-
-    def _current_trace(self) -> ScenarioTraceChoice | None:
-        value = self._trace_combo.currentData()
-        return value if isinstance(value, ScenarioTraceChoice) else None
-
-    def _current_source(self) -> ScenarioSourceChoice | None:
-        value = self._source_combo.currentData()
-        return value if isinstance(value, ScenarioSourceChoice) else None
 
 
-class AddRouteDialog(QDialog):
-    """Dialog for appending a route from an imported trace source."""
-
-    def __init__(self, parent: QWidget | None, view_model: ScenariosViewModel) -> None:
-        """Create the add route dialog.
-
-        Args:
-            parent: Parent Qt widget.
-            view_model: Scenarios ViewModel used for trace/source choices and
-                current draft defaults.
-        """
-        super().__init__(parent)
-        self._view_model = view_model
-        self._source_choices: tuple[ScenarioSourceChoice, ...] = ()
-        self._build_ui()
-        self._sync_trace_choices()
-
-    def selection(self) -> tuple[ScenarioTraceChoice | None, ScenarioSourceChoice | None, int, str]:
-        """Return the selected route ingredients.
-
-        Returns:
-            Tuple of selected trace, selected trace source, logical channel,
-            and existing target ID.
-        """
-        return (
-            self._current_trace(),
-            self._current_source(),
-            self._logical_spin.value(),
-            self._current_target_id(),
-        )
-
-    def has_add_action(self) -> bool:
-        """Return whether the dialog can append a route.
-
-        Returns:
-            True when both trace and source are selected.
-        """
-        return self._buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
-
-    def body_text(self) -> str:
-        """Return visible dialog text used by tests.
-
-        Returns:
-            Combined status and selector text.
-        """
-        return "\n".join(
-            (
-                self.windowTitle(),
-                self._empty_label.text(),
-                self._trace_combo.currentText(),
-                self._source_combo.currentText(),
-                self._target_combo.currentText(),
-                f"Logical Channel: {self._logical_spin.value()}",
-            )
-        )
-
-    def _build_ui(self) -> None:
-        self.setWindowTitle("Add Route")
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        self._trace_combo = QComboBox()
-        self._source_combo = QComboBox()
-        self._target_combo = QComboBox()
-        self._logical_spin = QSpinBox()
-        self._logical_spin.setRange(0, 255)
-        self._trace_combo.currentIndexChanged.connect(self._handle_trace_changed)
-        form.addRow("Trace", self._trace_combo)
-        form.addRow("Source", self._source_combo)
-        form.addRow("Target", self._target_combo)
-        form.addRow("Logical Channel", self._logical_spin)
-        layout.addLayout(form)
-        self._empty_label = QLabel("")
-        layout.addWidget(self._empty_label)
-        self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self._buttons.accepted.connect(self.accept)
-        self._buttons.rejected.connect(self.reject)
-        layout.addWidget(self._buttons)
-
-    def _sync_trace_choices(self) -> None:
-        self._trace_combo.clear()
-        for trace in self._view_model.trace_choices:
-            self._trace_combo.addItem(f"{trace.name} ({trace.event_count} frames)", trace)
-        if self._view_model.trace_choices:
-            self._empty_label.setText("")
-            self._handle_trace_changed(0)
-        else:
-            self._empty_label.setText("No imported traces. Import ASC in Trace Library first.")
-            self._source_combo.clear()
-            self._sync_targets()
-            self._sync_default_channels()
-            self._sync_ok_button()
-
-    def _handle_trace_changed(self, _index: int) -> None:
-        trace = self._current_trace()
-        self._source_combo.clear()
-        self._source_choices = ()
-        if trace is None:
-            self._sync_targets()
-            self._sync_default_channels()
-            self._sync_ok_button()
-            return
-        try:
-            self._source_choices = self._view_model.source_choices_for_trace(trace.trace_id)
-        except Exception as exc:
-            self._empty_label.setText(str(exc))
-            self._sync_ok_button()
-            return
-        for source in self._source_choices:
-            self._source_combo.addItem(source.label, source)
-        if not self._source_choices:
-            self._empty_label.setText("Selected trace has no source summaries.")
-        else:
-            self._empty_label.setText("")
-        self._sync_targets()
-        self._sync_default_channels()
-        self._sync_ok_button()
-
-    def _sync_default_channels(self) -> None:
-        logical = _next_route_logical_channel(self._view_model.draft)
-        self._logical_spin.setValue(logical)
-
-    def _sync_targets(self) -> None:
-        self._target_combo.clear()
-        for choice in self._view_model.target_endpoint_choices:
-            self._target_combo.addItem(choice.label, choice.target_id)
-        if self._target_combo.count() == 0 and not self._empty_label.text():
-            self._empty_label.setText("Current draft has no targets. Add a target first.")
-
-    def _sync_ok_button(self) -> None:
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            self._current_trace() is not None
-            and self._current_source() is not None
-            and bool(self._current_target_id())
-        )
-
-    def _current_trace(self) -> ScenarioTraceChoice | None:
-        value = self._trace_combo.currentData()
-        return value if isinstance(value, ScenarioTraceChoice) else None
-
-    def _current_source(self) -> ScenarioSourceChoice | None:
-        value = self._source_combo.currentData()
-        return value if isinstance(value, ScenarioSourceChoice) else None
-
-    def _current_target_id(self) -> str:
-        value = self._target_combo.currentData()
-        return "" if value is None else str(value)
-
-
-def _next_route_logical_channel(draft: ScenarioDraft | None) -> int:
-    if draft is None or not draft.routes:
-        return 0
-    used = {route.logical_channel for route in draft.routes}
-    for value in range(256):
-        if value not in used:
-            return value
-    return 255
