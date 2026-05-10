@@ -5,11 +5,13 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -674,7 +676,7 @@ class ScenariosView(QWidget):
         self._page_stack.addWidget(list_page)
 
         # Page 1: editor view (existing preview for now)
-        editor_page = self._build_editor_preview()
+        editor_page = self._build_editor_view()
         self._page_stack.addWidget(editor_page)
 
         self._page_stack.setCurrentIndex(0)
@@ -687,6 +689,26 @@ class ScenariosView(QWidget):
     def _switch_to_list(self) -> None:
         """Switch the page stack back to the list and discard the draft."""
         self._page_stack.setCurrentIndex(0)
+
+    def _back_to_list(self) -> None:
+        """Return to the scenario list, discarding any unsaved draft."""
+        self._switch_to_list()
+
+    def _add_route_from_editor(self) -> None:
+        """Add a route from available trace choices, inline."""
+        if self._replay_active or self._view_model.draft is None:
+            return
+        if not self._view_model.trace_choices:
+            self._view_model.load_trace_choices()
+            return
+        trace = self._view_model.trace_choices[0]
+        sources = self._view_model.source_choices_for_trace(trace.trace_id)
+        if not sources:
+            return
+        source = sources[0]
+        draft = self._view_model.draft
+        target_id = draft.targets[0].target_id if draft.targets else ""
+        self._view_model.add_route_from_trace(trace, source, target_id=target_id)
 
     def _sync_rows(self) -> None:
         self._model.set_rows(self._view_model.rows)
@@ -723,22 +745,37 @@ class ScenariosView(QWidget):
             return
         self.create_error_dialog().exec()
 
-    def _build_editor_preview(self) -> QWidget:
-        preview = QWidget()
-        layout = QVBoxLayout(preview)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_overview_tab(), "Overview")
-        self._tabs.addTab(self._build_traces_devices_tab(), "Traces & Devices")
-        self._tabs.addTab(self._build_routes_tab(), "Routes")
-        self._json_preview = _read_only_text("加载 Scenario 后显示格式化 JSON。")
-        self._tabs.addTab(self._json_preview, "JSON")
-        layout.addWidget(self._tabs)
-        return preview
+    def _build_editor_view(self) -> QWidget:
+        """Build the flat scenario editor page with all sections stacked."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
-    def _build_overview_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+        editor = QWidget()
+        layout = QVBoxLayout(editor)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        # Top bar: Back + actions
+        top_bar = QHBoxLayout()
+        self._back_button = QPushButton("← Back to list")
+        self._back_button.clicked.connect(self._back_to_list)
+        top_bar.addWidget(self._back_button)
+        top_bar.addStretch(1)
+        self._editor_validate_button = QPushButton("Validate")
+        self._editor_validate_button.setEnabled(False)
+        self._editor_validate_button.clicked.connect(self._validate_loaded_scenario)
+        top_bar.addWidget(self._editor_validate_button)
+        self._editor_run_button = QPushButton("Run")
+        self._editor_run_button.setEnabled(False)
+        self._editor_run_button.clicked.connect(self._run_loaded_scenario)
+        top_bar.addWidget(self._editor_run_button)
+        layout.addLayout(top_bar)
+
+        # Section 1: Overview
+        overview_label = QLabel("Overview")
+        overview_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(overview_label)
         form = QFormLayout()
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Scenario name")
@@ -750,30 +787,28 @@ class ScenariosView(QWidget):
         form.addRow("Name", self._name_edit)
         form.addRow("Timeline", self._loop_check)
         layout.addLayout(form)
-        self._overview = _read_only_text("加载或新建 Scenario 后显示 schema、数量和 base dir。")
-        layout.addWidget(self._overview, 1)
-        return tab
 
-    def _build_traces_devices_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+        # Section 2: Traces & Devices
+        section_label = QLabel("Traces & Devices")
+        section_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(section_label)
+
         traces = QTableView()
         traces.setModel(self._trace_model)
         traces.verticalHeader().setVisible(False)
         traces.setColumnWidth(0, 180)
         traces.setColumnWidth(1, 520)
+        traces.setMaximumHeight(100)
         layout.addWidget(QLabel("Traces"))
         layout.addWidget(traces)
 
         device_toolbar = QHBoxLayout()
         self._add_device_button = QPushButton("Add Device")
         self._add_device_button.setEnabled(False)
-        self._add_device_button.setToolTip("添加一个可编辑 device 配置")
         self._add_device_button.clicked.connect(self._add_device)
         device_toolbar.addWidget(self._add_device_button)
         self._remove_device_button = QPushButton("Remove Device")
         self._remove_device_button.setEnabled(False)
-        self._remove_device_button.setToolTip("删除未被 target 引用的 device")
         self._remove_device_button.clicked.connect(self._remove_selected_device)
         device_toolbar.addWidget(self._remove_device_button)
         device_toolbar.addStretch(1)
@@ -790,6 +825,7 @@ class ScenariosView(QWidget):
         self._devices_table.setColumnWidth(3, 120)
         self._devices_table.setColumnWidth(4, 130)
         self._devices_table.setColumnWidth(5, 70)
+        self._devices_table.setMaximumHeight(120)
         self._devices_table.selectionModel().currentRowChanged.connect(
             lambda _current, _previous: self._handle_device_selection_changed()
         )
@@ -822,12 +858,10 @@ class ScenariosView(QWidget):
         target_toolbar = QHBoxLayout()
         self._add_target_button = QPushButton("Add Target")
         self._add_target_button.setEnabled(False)
-        self._add_target_button.setToolTip("为当前 device 添加一个 target endpoint")
         self._add_target_button.clicked.connect(self._add_target)
         target_toolbar.addWidget(self._add_target_button)
         self._remove_target_button = QPushButton("Remove Target")
         self._remove_target_button.setEnabled(False)
-        self._remove_target_button.setToolTip("删除未被 route 引用的 target")
         self._remove_target_button.clicked.connect(self._remove_selected_target)
         target_toolbar.addWidget(self._remove_target_button)
         target_toolbar.addStretch(1)
@@ -838,12 +872,7 @@ class ScenariosView(QWidget):
         self._targets_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self._targets_table.setModel(self._target_model)
         self._targets_table.verticalHeader().setVisible(False)
-        self._targets_table.setColumnWidth(0, 170)
-        self._targets_table.setColumnWidth(1, 120)
-        self._targets_table.setColumnWidth(2, 70)
-        self._targets_table.setColumnWidth(3, 60)
-        self._targets_table.setColumnWidth(4, 100)
-        self._targets_table.setColumnWidth(5, 100)
+        self._targets_table.setMaximumHeight(120)
         self._targets_table.selectionModel().currentRowChanged.connect(
             lambda _current, _previous: self._handle_target_selection_changed()
         )
@@ -851,7 +880,7 @@ class ScenariosView(QWidget):
 
         target_form = QFormLayout()
         self._target_device_combo = QComboBox()
-        self._target_device_combo.currentIndexChanged.connect(lambda _index: self._apply_target_device_edit())
+        self._target_device_combo.currentTextChanged.connect(lambda _text: self._apply_target_device_edit())
         self._target_bus_combo = QComboBox()
         self._target_bus_combo.addItems(["CAN", "CANFD"])
         self._target_bus_combo.currentTextChanged.connect(lambda _text: self._apply_target_bus_edit())
@@ -859,82 +888,82 @@ class ScenariosView(QWidget):
         self._target_editor_physical_spin.setRange(0, 255)
         self._target_editor_physical_spin.editingFinished.connect(self._apply_target_editor_physical_edit)
         self._target_nominal_baud_spin = QSpinBox()
-        self._target_nominal_baud_spin.setRange(1, 10_000_000)
+        self._target_nominal_baud_spin.setRange(0, 10_000_000)
+        self._target_nominal_baud_spin.setSingleStep(50000)
         self._target_nominal_baud_spin.editingFinished.connect(self._apply_target_nominal_baud_edit)
         self._target_data_baud_spin = QSpinBox()
-        self._target_data_baud_spin.setRange(1, 10_000_000)
+        self._target_data_baud_spin.setRange(0, 10_000_000)
+        self._target_data_baud_spin.setSingleStep(50000)
         self._target_data_baud_spin.editingFinished.connect(self._apply_target_data_baud_edit)
-        self._target_resistance_check = QCheckBox("Resistance enabled")
+        self._target_resistance_check = QCheckBox("Resistance")
         self._target_resistance_check.clicked.connect(self._apply_target_resistance_edit)
-        self._target_listen_only_check = QCheckBox("Listen only")
+        self._target_listen_only_check = QCheckBox("Listen Only")
         self._target_listen_only_check.clicked.connect(self._apply_target_listen_only_edit)
-        self._target_tx_echo_check = QCheckBox("TX echo")
+        self._target_tx_echo_check = QCheckBox("TX Echo")
         self._target_tx_echo_check.clicked.connect(self._apply_target_tx_echo_edit)
         target_form.addRow("Device", self._target_device_combo)
         target_form.addRow("Bus", self._target_bus_combo)
-        target_form.addRow("Physical Channel", self._target_editor_physical_spin)
-        target_form.addRow("Nominal baud", self._target_nominal_baud_spin)
-        target_form.addRow("Data baud", self._target_data_baud_spin)
-        target_form.addRow("Resistance", self._target_resistance_check)
-        target_form.addRow("Listen only", self._target_listen_only_check)
-        target_form.addRow("TX echo", self._target_tx_echo_check)
+        target_form.addRow("Physical CH", self._target_editor_physical_spin)
+        target_form.addRow("Nominal Baud", self._target_nominal_baud_spin)
+        target_form.addRow("Data Baud", self._target_data_baud_spin)
+        target_form.addRow(self._target_resistance_check, self._target_listen_only_check)
+        target_form.addRow("", self._target_tx_echo_check)
         layout.addLayout(target_form)
         self._target_issue_label = QLabel("")
         self._target_issue_label.setStyleSheet("color: #C2410C;")
         layout.addWidget(self._target_issue_label)
-        return tab
 
-    def _build_routes_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        toolbar = QHBoxLayout()
+        # Section 3: Routes
+        routes_label = QLabel("Routes")
+        routes_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(routes_label)
+
+        route_toolbar = QHBoxLayout()
         self._add_route_button = QPushButton("Add Route")
         self._add_route_button.setEnabled(False)
-        self._add_route_button.setToolTip("从已导入 Trace source 添加一条 route")
-        toolbar.addWidget(self._add_route_button)
+        self._add_route_button.clicked.connect(self._add_route_from_editor)
+        route_toolbar.addWidget(self._add_route_button)
         self._remove_route_button = QPushButton("Remove Route")
         self._remove_route_button.setEnabled(False)
-        self._remove_route_button.setToolTip("删除当前选中的 route，不删除 source/target 资源")
         self._remove_route_button.clicked.connect(self._remove_selected_route)
-        toolbar.addWidget(self._remove_route_button)
-        toolbar.addStretch(1)
-        layout.addLayout(toolbar)
-        form = QFormLayout()
-        self._route_source_combo = QComboBox()
-        self._route_source_combo.setEnabled(False)
-        self._route_source_combo.currentIndexChanged.connect(lambda _index: self._apply_route_source_edit())
-        self._route_logical_spin = QSpinBox()
-        self._route_logical_spin.setRange(0, 255)
-        self._route_logical_spin.setEnabled(False)
-        self._route_logical_spin.editingFinished.connect(self._apply_route_logical_edit)
-        self._route_target_combo = QComboBox()
-        self._route_target_combo.setEnabled(False)
-        self._route_target_combo.currentIndexChanged.connect(lambda _index: self._apply_route_target_edit())
-        self._target_physical_spin = QSpinBox()
-        self._target_physical_spin.setRange(0, 255)
-        self._target_physical_spin.setEnabled(False)
-        self._target_physical_spin.editingFinished.connect(self._apply_target_physical_edit)
-        form.addRow("Source", self._route_source_combo)
-        form.addRow("Logical Channel", self._route_logical_spin)
-        form.addRow("Target", self._route_target_combo)
-        form.addRow("Target Physical Channel", self._target_physical_spin)
-        layout.addLayout(form)
-        self._route_issue_label = QLabel("")
-        self._route_issue_label.setStyleSheet("color: #C2410C;")
-        layout.addWidget(self._route_issue_label)
+        route_toolbar.addWidget(self._remove_route_button)
+        route_toolbar.addStretch(1)
+        layout.addLayout(route_toolbar)
+
         self._routes_table = QTableView()
         self._routes_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._routes_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self._routes_table.setModel(self._route_model)
         self._routes_table.verticalHeader().setVisible(False)
-        self._routes_table.setColumnWidth(0, 260)
-        self._routes_table.setColumnWidth(1, 140)
-        self._routes_table.setColumnWidth(2, 260)
+        self._routes_table.setMaximumHeight(120)
         self._routes_table.selectionModel().currentRowChanged.connect(
             lambda _current, _previous: self._handle_route_selection_changed()
         )
         layout.addWidget(self._routes_table)
-        return tab
+
+        route_form = QFormLayout()
+        self._route_source_combo = QComboBox()
+        self._route_source_combo.currentTextChanged.connect(lambda _text: self._apply_route_source_edit())
+        self._route_logical_spin = QSpinBox()
+        self._route_logical_spin.setRange(0, 255)
+        self._route_logical_spin.editingFinished.connect(self._apply_route_logical_edit)
+        self._route_target_combo = QComboBox()
+        self._route_target_combo.currentTextChanged.connect(lambda _text: self._apply_route_target_edit())
+        self._target_physical_spin = QSpinBox()
+        self._target_physical_spin.setRange(0, 255)
+        self._target_physical_spin.editingFinished.connect(self._apply_target_physical_edit)
+        route_form.addRow("Source", self._route_source_combo)
+        route_form.addRow("Logical CH", self._route_logical_spin)
+        route_form.addRow("Target", self._route_target_combo)
+        route_form.addRow("Target CH", self._target_physical_spin)
+        layout.addLayout(route_form)
+        self._route_issue_label = QLabel("")
+        self._route_issue_label.setStyleSheet("color: #C2410C;")
+        layout.addWidget(self._route_issue_label)
+
+        layout.addStretch(1)
+        scroll.setWidget(editor)
+        return scroll
 
     def _handle_selection_changed(self) -> None:
         self._sync_command_buttons()
@@ -1078,20 +1107,16 @@ class ScenariosView(QWidget):
             self._target_physical_spin.setValue(0)
             self._target_physical_spin.setEnabled(False)
             self._route_issue_label.setText("")
-            self._overview.setPlainText("加载或新建 Scenario 后显示 schema、数量和 base dir。")
             self._trace_model.set_rows(())
             self._device_model.set_rows(())
             self._target_model.set_rows(())
             self._route_model.set_rows(())
-            self._json_preview.setPlainText("加载 Scenario 后显示格式化 JSON。")
         else:
             self._sync_edit_controls(draft)
-            self._overview.setPlainText(_draft_detail(draft))
             self._trace_model.set_rows(draft.traces)
             self._device_model.set_rows(draft.devices)
             self._target_model.set_rows(draft.targets)
             self._route_model.set_rows(draft.routes)
-            self._json_preview.setPlainText(draft.json_text)
             if draft.devices:
                 row = min(max(self._selected_device_index(), 0), len(draft.devices) - 1)
                 self._devices_table.selectRow(row)
