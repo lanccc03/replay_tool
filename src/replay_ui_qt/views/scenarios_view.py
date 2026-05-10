@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,11 +13,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QSplitter,
     QStackedWidget,
-    QTabWidget,
     QTableView,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -30,8 +27,6 @@ from replay_ui_qt.view_models.scenarios import (
     ScenarioDraft,
     ScenarioDraftIssue,
     ScenarioRow,
-    ScenarioSourceChoice,
-    ScenarioTraceChoice,
     ScenarioValidationDetails,
     ScenariosViewModel,
 )
