@@ -594,6 +594,19 @@ class TraceLibraryViewTests(unittest.TestCase):
             view.close()
             self._app.processEvents()
 
+    def test_toolbar_header_frame_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = _trace_record(tmp)
+            view = TraceLibraryView(TraceLibraryViewModel(_TraceApp(records=[record]), _runner()))
+            try:
+                _wait_for(lambda: view.refresh_enabled(), self._app)
+                from PySide6.QtWidgets import QFrame
+                header = view.findChild(QFrame, "ToolbarHeader")
+                self.assertIsNotNone(header, "ToolbarHeader QFrame should wrap toolbar")
+            finally:
+                view.close()
+                self._app.processEvents()
+
 
 class ReplayMonitorViewTests(unittest.TestCase):
     @classmethod
