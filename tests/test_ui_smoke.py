@@ -48,6 +48,23 @@ class UiSmokeTests(unittest.TestCase):
                 window.close()
                 self._app.processEvents()
 
+    def test_content_panel_frame_wraps_stacked_widget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            replay_app = ReplayApplication(workspace=tmp)
+            context = AppContext(workspace=tmp, application=replay_app)
+            window = MainWindow(context)
+            try:
+                window.show()
+                self._app.processEvents()
+                _wait_for(lambda: context.task_runner.active_count() == 0, self._app)
+
+                from PySide6.QtWidgets import QFrame
+                content = window.findChild(QFrame, "ContentPanel")
+                self.assertIsNotNone(content, "ContentPanel QFrame should wrap QStackedWidget")
+            finally:
+                window.close()
+                self._app.processEvents()
+
 
 def _wait_for(predicate, app: QApplication, timeout_ms: int = 3000) -> None:
     loop = QEventLoop()

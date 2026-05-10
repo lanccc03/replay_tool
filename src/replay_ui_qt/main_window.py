@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from replay_ui_qt.app_context import AppContext
 from replay_ui_qt.view_models.devices import DevicesViewModel
@@ -88,10 +88,15 @@ class MainWindow(QMainWindow):
         body.setSpacing(8)
         self._navigation = NavigationPanel()
         self._stack = QStackedWidget()
+        self._content_panel = QFrame()
+        self._content_panel.setObjectName("ContentPanel")
+        content_layout = QVBoxLayout(self._content_panel)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self._stack)
         self._inspector = InspectorPanel()
 
         body.addWidget(self._navigation)
-        body.addWidget(self._stack, 1)
+        body.addWidget(self._content_panel, 1)
         body.addWidget(self._inspector)
         root_layout.addLayout(body, 1)
 
