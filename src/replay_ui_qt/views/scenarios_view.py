@@ -580,7 +580,6 @@ class ScenariosView(QWidget):
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
         toolbar.addStretch(1)
-        layout.addLayout(toolbar)
 
         self._list_stack = QStackedWidget()
         self._table = QTableView()
@@ -606,6 +605,7 @@ class ScenariosView(QWidget):
         list_page = QWidget()
         list_layout = QVBoxLayout(list_page)
         list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addLayout(toolbar)
         list_layout.addWidget(self._list_stack)
         self._page_stack.addWidget(list_page)
 
