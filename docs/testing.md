@@ -1,51 +1,61 @@
-# next_replay 测试说明
+# next_replay Testing
 
-本文记录 `next_replay` 的最低验证命令和验证边界。所有命令默认在 `C:\code\next_replay` 执行。
+## Running tests
 
-## 自动化验证
-
-PowerShell：
-
-```powershell
-$env:PYTHONPYCACHEPREFIX=(Join-Path $PWD ".pycache_tmp_compile")
-$env:PYTHONPATH=(Join-Path $PWD "src")
-python -m compileall src tests
-
-$env:PYTHONDONTWRITEBYTECODE='1'
-$env:PYTHONPATH=(Join-Path $PWD "src")
-python -m unittest discover -s tests -v
-
-$env:PYTHONPATH=(Join-Path $PWD "src")
-python -m replay_tool.cli validate examples/mock_canfd.json
-python -m replay_tool.cli save-scenario examples/mock_canfd.json
-python -m replay_tool.cli scenarios
+```bash
+uv run python -m unittest discover -s tests -v       # All tests
+uv run python -m unittest tests.test_ui_views -v     # Single module
+uv run python -m compileall src tests                # Syntax check
+uv run ruff check src tests                          # Lint
 ```
 
-如果 `uv` 可用：
+All commands assume the repo root as working directory.
 
-```powershell
-uv sync
-uv run python -m unittest discover -s tests -v
-uv run replay-tool validate examples/mock_canfd.json
-```
+## Test map
 
-## 测试映射
+| File | Covers |
+|------|--------|
+| `tests/test_scenario_and_planner.py` | Schema v2 parsing, validation, cross-reference checks, planner compilation |
+| `tests/test_runtime.py` | ReplayRuntime worker thread, scheduler, cursor merge, pause/resume/stop, loop mode |
+| `tests/test_cli.py` | CLI arg parsing, output formatting, end-to-end validate/run/import flows |
+| `tests/test_trace_store.py` | ASC streaming import, `.frames.bin` binary cache, block index, source filters, time-window reads, cache rebuild, trace delete |
+| `tests/test_project_store.py` | Scenario save, update, list, get, delete, base_dir persistence, compile/run by saved ID |
+| `tests/test_tongxing_adapter.py` | Tongxing adapter with fake TSMaster API (no hardware) |
+| `tests/test_ui_smoke.py` | Offscreen main window creation, navigation count, inspector content, status bar |
+| `tests/test_ui_views.py` | Trace Library and Scenario editor views through `ReplayApplication` |
+| `tests/test_ui_view_models.py` | ViewModel state mapping and command bindings |
+| `tests/test_ui_tasks.py` | `TaskRunner` async framework, duplicate guarding, success/failure signals |
+| `tests/test_ui_widgets.py` | Standalone widget rendering and behavior |
 
-- Scenario / planner：`tests/test_scenario_and_planner.py`
-- runtime：`tests/test_runtime.py`
-- CLI 输出和 Trace Library 命令：`tests/test_cli.py`
-- Trace Library 存储：`tests/test_trace_store.py`，覆盖 ASC 流式导入、`.frames.bin` 二进制 cache、轻量 block index、source filter、时间窗口读取、cache rebuild 和 trace delete。
-- Project / Scenario Store：`tests/test_project_store.py`，覆盖 schema v2 场景保存、更新、列出、查看、删除、base_dir 持久化，以及按保存 ID 编译 / 运行。
-- PySide6 UI：`tests/test_ui_view_models.py`、`tests/test_ui_views.py`、`tests/test_ui_smoke.py`、`tests/test_ui_tasks.py` 和 `tests/test_ui_widgets.py`，覆盖 Trace / Scenario ViewModel 映射、Trace import / inspect / rebuild / delete、Scenario draft 编辑 / 保存 / Validate / Run、真实 `ReplayApplication` mock replay session、Replay Monitor 控制、真实 `ReplayApplication` mock device enumeration、Devices app 层枚举、页面 busy / error 反馈、命令状态、异步任务框架、基础 widget 和 offscreen 主窗口 smoke test。
-- 同星 fake SDK：`tests/test_tongxing_adapter.py`
+## Test layering strategy
 
-## 验证边界
+### Layer 1: Pure domain and planner (fast, no I/O)
 
-- 自动化测试使用 Mock 设备和 fake TSMaster API，不代表 Windows 真机验证。
-- 同星 TC1014 真机验证必须按 `docs/tongxing-hardware-validation.md` 记录。
-- 当前 CLI 只接受 `schema_version=2` 场景文件，旧 v1 文件不会运行。
-- `validate` / `run` 会把 raw ASC 场景 trace 导入或复用到 workspace cache，再通过 cursor 流式回放。
-- ASC 流式导入要求时间戳单调递增；乱序 ASC 外部排序未实现。
-- 当前 PySide6 UI 已覆盖 Trace Library 的 Import / Inspect / Rebuild / Delete 闭环、Scenario Store schema v2 draft 编辑 / 保存 / Validate / Run、Replay Monitor mock / app 层 session 控制，以及 Devices mock / app 层枚举；CLI / core 改动通常不需要 Qt 手工点击验证。
-- 当前 MVP 未实现 BLF / DBC / DoIP / ZLG / Signal Override / Diagnostics；真实窗口点击、高 DPI、Windows 同星真机 UI 工作流未验证。相关能力不能在交付说明中写成已验证。
-- offscreen UI smoke test 不能替代真实窗口点击、高 DPI 或同星真机 UI 验证。
+`test_scenario_and_planner.py` tests `ReplayScenario.from_dict()` validation and `ReplayPlanner.compile()` with in-memory trace records. No filesystem, no devices.
+
+### Layer 2: Storage with real filesystem (medium)
+
+`test_trace_store.py` and `test_project_store.py` use `tempfile.TemporaryDirectory` for workspace directories. They test real ASC parsing against example files in `examples/`, binary cache encode/decode, and SQLite CRUD. A `SpyAscReader` asserts that streaming paths never fall back to full-list reads.
+
+### Layer 3: Runtime with mock devices (medium)
+
+`test_runtime.py` uses `ManualClock` (fake monotonic time) and `RecordingDevice` (subclass of `MockDevice` that records sent batches). This allows deterministic testing of scheduler timing, loop restart, pause/resume accounting, and partial-send scenarios.
+
+### Layer 4: CLI integration (end-to-end)
+
+`test_cli.py` runs `main(argv)` with temporary workspaces, capturing stdout/stderr. Validates the full pipeline: import ASC → validate scenario → run → output format.
+
+### Layer 5: Adapter with fake SDK (Windows-only API, cross-platform tests)
+
+`test_tongxing_adapter.py` patches `importlib.import_module` to inject a fake `TSMasterAPI` module. Tests adapter construction, channel enumeration, and send/receive without real hardware.
+
+### Layer 6: UI (offscreen Qt)
+
+UI tests use `QT_QPA_PLATFORM=offscreen` (no display required). Smoke tests create the full `MainWindow` with a real `ReplayApplication` and temporary workspace. View tests exercise individual pages with app-layer backing. ViewModel tests unit-test state transitions and command bindings with stubbed app calls.
+
+## Validation boundaries
+
+- **Mock/Fake test passes do not equal hardware validation.** The `MockDevice` and fake TSMaster API exercises code paths but cannot verify electrical behavior, timing accuracy, or real CAN bus interaction.
+- **Tongxing TC1014 validation is manual, Windows-only**, and must be recorded per `docs/tongxing-hardware-validation.md`.
+- **Offscreen UI tests do not verify real window behavior**, high DPI rendering, or native click/drag interaction.
+- The current codebase only supports ASC traces (`schema_version=2`). BLF, DBC, DoIP, ZLG, Signal Override, and Diagnostics are not implemented.

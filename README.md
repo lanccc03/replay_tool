@@ -1,7 +1,4 @@
 # next_replay
-
-`next_replay` is a new, parallel replay tool project. It does not import or modify the existing `replay_platform` package.
-
 The current project is a headless-first replay tool with a PySide6 workbench
 on top of a ports-and-adapters architecture:
 
@@ -14,7 +11,7 @@ on top of a ports-and-adapters architecture:
 - `app`: CLI use cases.
 
 The architecture and design guide is maintained in
-[`docs/architecture-design-guide.md`](docs/architecture-design-guide.md).
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Commands
 
@@ -204,7 +201,7 @@ python -m unittest discover -s tests -v
 
 ## Tongxing / TSMaster
 
-The Tongxing adapter loads the SDK from `TSMaster/Windows` by default. It imports `TSMasterApi.TSMasterAPI` from that directory and does not use the legacy `TSMasterApi/` package that remains in the old `replay` project.
+The Tongxing adapter loads the SDK from `TSMaster/Windows` by default. It imports `TSMasterApi.TSMasterAPI` from that directory via `importlib`.
 
 Hardware validation must be done on Windows with TSMaster installed and a connected Tongxing device:
 
