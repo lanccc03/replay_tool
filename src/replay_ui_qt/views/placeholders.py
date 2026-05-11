@@ -342,7 +342,7 @@ class DevicesView(QWidget):
         )
         self._channel_model = ObjectTableModel(
             (
-                TableColumn("Physical Channel", lambda row: row.physical_channel, align_right=True),
+                TableColumn("Physical Channel", lambda row: row.physical_channel),
                 TableColumn("Status", lambda row: row.status),
             )
         )

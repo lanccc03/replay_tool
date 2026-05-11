@@ -110,7 +110,7 @@ QPushButton[primary="true"]:hover {
 QTableView {
     background: #FFFFFF;
     alternate-background-color: #F6F7F9;
-    border: 1px solid #D8DEE6;
+    border: none;
     gridline-color: #D8DEE6;
     selection-background-color: #DDF4F2;
     selection-color: #1F2933;

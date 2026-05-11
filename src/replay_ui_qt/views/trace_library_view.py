@@ -41,9 +41,9 @@ class TraceLibraryView(QWidget):
             (
                 TableColumn("名称", lambda row: row.name),
                 TableColumn("Trace ID", lambda row: row.trace_id, monospace=True),
-                TableColumn("Frames", lambda row: row.event_count, align_right=True),
-                TableColumn("Start ns", lambda row: row.start_ns, monospace=True, align_right=True),
-                TableColumn("End ns", lambda row: row.end_ns, monospace=True, align_right=True),
+                TableColumn("Frames", lambda row: row.event_count),
+                TableColumn("Start ns", lambda row: row.start_ns, monospace=True),
+                TableColumn("End ns", lambda row: row.end_ns, monospace=True),
                 TableColumn("Cache", lambda row: row.cache_status, status=True),
             )
         )

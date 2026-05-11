@@ -18,7 +18,6 @@ class TableColumn:
     value: Callable[[Any], object]
     tooltip: Callable[[Any], str] | None = None
     monospace: bool = False
-    align_right: bool = False
     status: bool = False
 
 
@@ -107,8 +106,8 @@ class ObjectTableModel(QAbstractTableModel):
             return _display_value(value)
         if role == Qt.ItemDataRole.FontRole and column.monospace:
             return monospace_font()
-        if role == Qt.ItemDataRole.TextAlignmentRole and column.align_right:
-            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            return int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ForegroundRole and column.status:
             return _status_brush(str(value))
         return None

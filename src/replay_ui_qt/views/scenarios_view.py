@@ -57,8 +57,8 @@ class ScenariosView(QWidget):
             (
                 TableColumn("名称", lambda row: row.name),
                 TableColumn("Scenario ID", lambda row: row.scenario_id, monospace=True),
-                TableColumn("Traces", lambda row: row.trace_count, align_right=True),
-                TableColumn("Routes", lambda row: row.route_count, align_right=True),
+                TableColumn("Traces", lambda row: row.trace_count),
+                TableColumn("Routes", lambda row: row.route_count),
                 TableColumn("Updated", lambda row: row.updated_at, monospace=True),
                 TableColumn("Base dir", lambda row: row.base_dir, tooltip=lambda row: row.base_dir),
             )
@@ -76,7 +76,7 @@ class ScenariosView(QWidget):
                 TableColumn("SDK root", lambda row: row.sdk_root, tooltip=lambda row: row.sdk_root),
                 TableColumn("Application", lambda row: row.application),
                 TableColumn("Device Type", lambda row: row.device_type),
-                TableColumn("Index", lambda row: row.device_index, align_right=True),
+                TableColumn("Index", lambda row: row.device_index),
             )
         )
         self._target_model = ObjectTableModel(
@@ -84,15 +84,15 @@ class ScenariosView(QWidget):
                 TableColumn("Target ID", lambda row: row.target_id, monospace=True),
                 TableColumn("Device", lambda row: row.device_id, monospace=True),
                 TableColumn("Bus", lambda row: row.bus),
-                TableColumn("CH", lambda row: row.physical_channel, align_right=True),
-                TableColumn("Nominal", lambda row: row.nominal_baud, align_right=True),
-                TableColumn("Data", lambda row: row.data_baud, align_right=True),
+                TableColumn("CH", lambda row: row.physical_channel),
+                TableColumn("Nominal", lambda row: row.nominal_baud),
+                TableColumn("Data", lambda row: row.data_baud),
             )
         )
         self._route_model = ObjectTableModel(
             (
                 TableColumn("Trace Source", lambda row: row.source_label, tooltip=lambda row: row.source_id),
-                TableColumn("Logical Channel", lambda row: row.logical_channel, align_right=True),
+                TableColumn("Logical Channel", lambda row: row.logical_channel),
                 TableColumn("Device Target", lambda row: row.target_label, tooltip=lambda row: row.target_id),
             )
         )
