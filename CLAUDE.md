@@ -63,7 +63,7 @@ Only schema v2 scenarios are supported. Trace replay reads from `.frames.bin` bi
 - Ruff line length: 120.
 - Commit style: conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`).
 - Complex features require an ExecPlan (see `.agents/PLANS.md`).
-- **UI work**: invoke `tool-ui-style` skill (team shared baseline), then read `docs/ui.md` for project-specific rules and priority hierarchy.
+- **UI work**: read `docs/ui.md` for UI rules and conventions before writing any UI code.
 
 ## Further reading
 

@@ -29,8 +29,7 @@ When making UI decisions, apply rules in this order:
 
 1. User's explicit instructions.
 2. This document (project-specific UI rules).
-3. `.codex/skills/tool-ui-style/` (team shared tool UI baseline).
-4. Existing PySide6 and `replay_ui_qt` code conventions.
+3. Existing PySide6 and `replay_ui_qt` code conventions.
 
 ### Active pages
 
