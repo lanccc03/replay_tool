@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -51,6 +51,8 @@ class ScenariosView(QWidget):
         super().__init__()
         self._view_model = view_model
         self._replay_active = False
+        self._pending_run = False
+        self._pending_save = False
         self._model = ObjectTableModel(
             (
                 TableColumn("名称", lambda row: row.name),
@@ -158,7 +160,7 @@ class ScenariosView(QWidget):
         Returns:
             True when a loaded draft can start a replay session.
         """
-        return self._editor_run_button.isEnabled()
+        return self._run_button.isEnabled()
 
     def add_route_enabled(self) -> bool:
         """Return whether Add Route is enabled.
@@ -577,6 +579,11 @@ class ScenariosView(QWidget):
         self._delete_button.setToolTip("删除选中 Scenario")
         self._delete_button.clicked.connect(self._delete_selected_scenario)
         toolbar.addWidget(self._delete_button)
+        self._run_button = QPushButton("Run")
+        self._run_button.setEnabled(False)
+        self._run_button.setToolTip("运行选中 Scenario")
+        self._run_button.clicked.connect(self._run_selected_scenario)
+        toolbar.addWidget(self._run_button)
         self._status_badge = StatusBadge("Idle", "default")
         toolbar.addWidget(self._status_badge)
         toolbar.addStretch(1)
@@ -622,6 +629,8 @@ class ScenariosView(QWidget):
 
     def _switch_to_list(self) -> None:
         """Switch the page stack back to the list and discard the draft."""
+        self._pending_run = False
+        self._pending_save = False
         self._page_stack.setCurrentIndex(0)
 
     def _back_to_list(self) -> None:
@@ -652,6 +661,7 @@ class ScenariosView(QWidget):
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _show_error(self, message: str) -> None:
+        self._pending_save = False
         self._sync_status_badge()
         if message:
             self.inspectorChanged.emit("Scenarios 错误", message)
@@ -693,10 +703,11 @@ class ScenariosView(QWidget):
         self._editor_validate_button.setEnabled(False)
         self._editor_validate_button.clicked.connect(self._validate_loaded_scenario)
         top_bar.addWidget(self._editor_validate_button)
-        self._editor_run_button = QPushButton("Run")
-        self._editor_run_button.setEnabled(False)
-        self._editor_run_button.clicked.connect(self._run_loaded_scenario)
-        top_bar.addWidget(self._editor_run_button)
+        self._editor_save_button = QPushButton("Save")
+        self._editor_save_button.setEnabled(False)
+        self._editor_save_button.setToolTip("保存并自动校验")
+        self._editor_save_button.clicked.connect(self._save_loaded_scenario)
+        top_bar.addWidget(self._editor_save_button)
         layout.addLayout(top_bar)
 
         # Section 1: Overview
@@ -953,6 +964,14 @@ class ScenariosView(QWidget):
             return
         self._view_model.validate_loaded_scenario()
 
+    def _save_loaded_scenario(self) -> None:
+        if self._replay_active:
+            return
+        if self._view_model.draft is None:
+            return
+        self._pending_save = True
+        self._view_model.validate_loaded_scenario()
+
     def _run_loaded_scenario(self) -> None:
         if self._replay_active:
             return
@@ -960,6 +979,15 @@ class ScenariosView(QWidget):
         if draft is None or self._view_model.has_blocking_issues:
             return
         self.runRequested.emit(dict(draft.body), draft.base_dir)
+
+    def _run_selected_scenario(self) -> None:
+        if self._replay_active:
+            return
+        row = self._selected_row()
+        if row is None:
+            return
+        self._pending_run = True
+        self._view_model.load_scenario(row.scenario_id)
 
     def _delete_selected_scenario(self) -> None:
         if self._replay_active:
@@ -1008,8 +1036,9 @@ class ScenariosView(QWidget):
         self._route_logical_spin.setEnabled(has_route and idle)
         self._route_target_combo.setEnabled(has_route and idle)
         self._target_physical_spin.setEnabled(has_route and idle)
+        self._run_button.setEnabled(row is not None and idle)
         self._editor_validate_button.setEnabled(has_draft and idle)
-        self._editor_run_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
+        self._editor_save_button.setEnabled(has_draft and not self._view_model.has_blocking_issues and idle)
 
     def _sync_draft(self) -> None:
         draft = self._view_model.draft
@@ -1060,10 +1089,18 @@ class ScenariosView(QWidget):
             else:
                 self._routes_table.clearSelection()
                 self._sync_edit_controls_for_current_route()
+        if self._pending_run and draft is not None and not self._view_model.has_blocking_issues:
+            self._pending_run = False
+            self.runRequested.emit(dict(draft.body), draft.base_dir)
+            return
+        self._pending_run = False
         self._sync_command_buttons()
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _sync_validation(self) -> None:
+        if self._pending_save:
+            self._pending_save = False
+            QTimer.singleShot(0, self._view_model.save_loaded_scenario)
         self.inspectorChanged.emit(*self.inspector_snapshot())
 
     def _sync_delete_result(self) -> None:

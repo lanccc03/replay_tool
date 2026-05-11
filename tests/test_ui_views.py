@@ -726,7 +726,7 @@ class ScenariosViewTests(unittest.TestCase):
             view.select_row(0)
 
             self.assertFalse(view.validate_enabled())
-            self.assertFalse(view.run_enabled())
+            self.assertTrue(view.run_enabled())
             self.assertTrue(view.delete_enabled())
 
             dialog = view.create_delete_confirmation_dialog()
@@ -943,7 +943,7 @@ class ScenariosViewTests(unittest.TestCase):
             view.select_route(0)
             view.edit_route_target("target-can")
 
-            self.assertFalse(view.run_enabled())
+            self.assertTrue(view.run_enabled())
             self.assertIn("CANFD source to CAN target", view.route_issue_text())
             title, body_text = view.inspector_snapshot()
             self.assertEqual("Scenario Draft Issues", title)
